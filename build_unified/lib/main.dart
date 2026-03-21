@@ -8,6 +8,8 @@ import 'modules/a_app_shell/state/app_state.dart';
 import 'modules/a_app_shell/state/providers.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   // Initialize logging first
   _initializeLogging();
 

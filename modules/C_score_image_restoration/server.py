@@ -16,6 +16,8 @@ import cv2
 import numpy as np
 import threading
 import time
+import shutil
+import atexit
 
 from lib.restoration_engine import RestorationOptions, restore
 
@@ -28,6 +30,17 @@ logger = logging.getLogger(__name__)
 # Security configuration
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_ORIGIN = os.environ.get('CORS_ORIGIN', 'http://localhost:8080')
+
+# Persistent output directory for serving restored images
+OUTPUT_DIR = Path(os.environ.get('RESTORATION_OUTPUT_DIR', tempfile.mkdtemp(prefix='restoration_server_')))
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+logger.info(f"Output directory: {OUTPUT_DIR}")
+
+def _cleanup_output_dir():
+    if OUTPUT_DIR.exists() and 'restoration_server_' in str(OUTPUT_DIR):
+        shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+
+atexit.register(_cleanup_output_dir)
 API_TOKEN = os.environ.get('RESTORATION_API_TOKEN', '')
 
 
@@ -155,83 +168,108 @@ class RestorationRequestHandler(BaseHTTPRequestHandler):
                 self._send_error(400, result.failure_reason)
                 return
 
-            # Save results to temporary directory
-            with tempfile.TemporaryDirectory(prefix='restoration_') as tmpdir:
-                tmpdir = Path(tmpdir)
+            # Save results to persistent output directory
+            import uuid as _uuid
+            job_id = _uuid.uuid4().hex[:8]
+            job_dir = OUTPUT_DIR / job_id
+            job_dir.mkdir(parents=True, exist_ok=True)
 
-                # Save intermediate images
-                intermediates_saved = {}
-                if result.intermediates:
-                    mapping = {
-                        'bounds_visualization': 'page_detected.png',
-                        'after_perspective': 'perspective.png',
-                        'after_deskew': 'deskewed.png',
-                        'grayscale': 'grayscale.png',
-                        'after_shadow_removal': 'shadow_removed.png',
-                        'after_contrast': 'contrast.png',
-                        'binary': 'binary.png'
-                    }
-
-                    for key, filename in mapping.items():
-                        if key in result.intermediates:
-                            img = result.intermediates[key]
-                            if img is not None and img.size > 0:
-                                filepath = tmpdir / filename
-                                cv2.imwrite(str(filepath), img)
-                                intermediates_saved[key] = filename
-
-                # Save final binary
-                binary_path = tmpdir / 'binary_final.png'
-                cv2.imwrite(str(binary_path), result.binary)
-
-                # Save grayscale
-                grayscale_path = tmpdir / 'grayscale_final.png'
-                cv2.imwrite(str(grayscale_path), result.rectified_gray)
-
-                # Create response with file references
-                response = {
-                    'success': True,
-                    'quality_score': float(result.quality_score),
-                    'quality_components': {
-                        k: float(v) for k, v in result.quality_components.items()
-                    },
-                    'skew_angle': float(result.skew_angle),
-                    'page_detected': result.page_bounds is not None,
-                    'processing_time_ms': float(result.processing_time_ms),
-                    'step_times_ms': {
-                        k: float(v) for k, v in result.step_times_ms.items()
-                    },
-                    'output_images': {
-                        'binary': '/api/images/binary_final.png',
-                        'grayscale': '/api/images/grayscale_final.png'
-                    },
-                    'intermediate_images': {
-                        k: f'/api/images/{v}' for k, v in intermediates_saved.items()
-                    }
+            # Save intermediate images
+            intermediates_saved = {}
+            if result.intermediates:
+                mapping = {
+                    'bounds_visualization': 'page_detected.png',
+                    'after_perspective': 'perspective.png',
+                    'after_deskew': 'deskewed.png',
+                    'grayscale': 'grayscale.png',
+                    'after_shadow_removal': 'shadow_removed.png',
+                    'after_contrast': 'contrast.png',
+                    'binary': 'binary.png'
                 }
 
-                # Store tmpdir reference (would need proper cache in production)
-                # For now, just return paths to files that would be served
-                self._send_json(200, response)
+                for key, filename in mapping.items():
+                    if key in result.intermediates:
+                        img = result.intermediates[key]
+                        if img is not None and img.size > 0:
+                            filepath = job_dir / filename
+                            cv2.imwrite(str(filepath), img)
+                            intermediates_saved[key] = filename
+
+            # Save final binary
+            binary_path = job_dir / 'binary_final.png'
+            cv2.imwrite(str(binary_path), result.binary)
+
+            # Save grayscale
+            grayscale_path = job_dir / 'grayscale_final.png'
+            cv2.imwrite(str(grayscale_path), result.rectified_gray)
+
+            # Create response with file references
+            response = {
+                'success': True,
+                'job_id': job_id,
+                'quality_score': float(result.quality_score),
+                'quality_components': {
+                    k: float(v) for k, v in result.quality_components.items()
+                },
+                'skew_angle': float(result.skew_angle),
+                'page_detected': result.page_bounds is not None,
+                'processing_time_ms': float(result.processing_time_ms),
+                'step_times_ms': {
+                    k: float(v) for k, v in result.step_times_ms.items()
+                },
+                'output_images': {
+                    'binary': f'/api/images/{job_id}/binary_final.png',
+                    'grayscale': f'/api/images/{job_id}/grayscale_final.png'
+                },
+                'intermediate_images': {
+                    k: f'/api/images/{job_id}/{v}' for k, v in intermediates_saved.items()
+                }
+            }
+
+            self._send_json(200, response)
 
         except Exception as e:
             logger.error(f"Error processing restoration: {e}", exc_info=True)
             self._send_error(500, 'Internal server error')
 
     def _handle_image_serve(self, path: str):
-        """Serve image files (in production, would use static file serving)"""
-        filename = path.replace('/api/images/', '')
-        self._send_error(501, 'Image serving requires file storage - use reverse proxy')
+        """Serve image files from output directory"""
+        relative_path = path.replace('/api/images/', '')
+        # Sanitize path to prevent directory traversal
+        if '..' in relative_path or relative_path.startswith('/'):
+            self._send_error(400, 'Invalid image path')
+            return
+
+        filepath = OUTPUT_DIR / relative_path
+        if not filepath.exists() or not filepath.is_file():
+            self._send_error(404, 'Image not found')
+            return
+
+        # Determine content type
+        ext = filepath.suffix.lower()
+        content_types = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg'}
+        content_type = content_types.get(ext, 'application/octet-stream')
+
+        try:
+            image_data = filepath.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', len(image_data))
+            self.send_header('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
+            self.end_headers()
+            self.wfile.write(image_data)
+        except Exception:
+            self._send_error(500, 'Internal server error')
 
     def _send_json(self, status: int, data: dict):
         """Send JSON response"""
-        response_body = json.dumps(data, indent=2)
+        response_bytes = json.dumps(data, indent=2).encode('utf-8')
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
-        self.send_header('Content-Length', len(response_body))
+        self.send_header('Content-Length', len(response_bytes))
         self.end_headers()
-        self.wfile.write(response_body.encode())
+        self.wfile.write(response_bytes)
 
     def _send_error(self, status: int, message: str):
         """Send error response"""

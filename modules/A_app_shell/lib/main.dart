@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'app.dart';
-import 'state/app_state.dart';
-import 'state/providers.dart';
+import 'modules/a_app_shell/app.dart';
+import 'modules/a_app_shell/state/app_state.dart';
+import 'modules/a_app_shell/state/providers.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   // Initialize logging first
   _initializeLogging();
 
@@ -91,8 +93,8 @@ class ErrorBoundary extends StatefulWidget {
 
   const ErrorBoundary({
     required this.child,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<ErrorBoundary> createState() => _ErrorBoundaryState();
@@ -102,12 +104,9 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   @override
   void initState() {
     super.initState();
-    // Set up global error handler
-    FlutterError.onError = (details) {
-      _showErrorDialog(details);
-    };
   }
 
+  // ignore: unused_element
   void _showErrorDialog(FlutterErrorDetails details) {
     debugPrint('[SmartScore] Showing error dialog: ${details.exceptionAsString()}');
 
@@ -127,7 +126,8 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
                 ),
                 const SizedBox(height: 16),
                 if (kDebugMode)
-                  Expanded(
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 200),
                     child: SingleChildScrollView(
                       child: SelectableText(
                         details.exceptionAsString(),
