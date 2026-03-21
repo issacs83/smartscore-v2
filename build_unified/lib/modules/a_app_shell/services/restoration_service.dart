@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -336,22 +335,6 @@ class RestorationService {
     } on RestorationException catch (e) {
       debugPrint('[Restoration] Error: ${e.type.name} — ${e.message}');
       rethrow;
-    } on SocketException catch (e) {
-      debugPrint('[Restoration] Error: SocketException — ${e.message}');
-      if (e.osError?.errorCode == 111 ||
-          e.osError?.errorCode == 10061 ||
-          e.message.contains('Connection refused')) {
-        throw const RestorationException(
-          type: RestorationError.connectionRefused,
-          message: '서버 연결이 거부되었습니다. 복원 서버가 실행 중인지 확인해주세요.',
-          failureCode: 'E-C10',
-        );
-      }
-      throw RestorationException(
-        type: RestorationError.serverUnavailable,
-        message: '서버에 연결할 수 없습니다: ${e.message}',
-        failureCode: 'E-C99',
-      );
     } on TimeoutException {
       debugPrint('[Restoration] Error: TimeoutException — restore timeout');
       throw const RestorationException(
@@ -412,19 +395,6 @@ class RestorationService {
       );
     } on RestorationException {
       rethrow;
-    } on SocketException catch (e) {
-      debugPrint('[Restoration] Error: SocketException — ${e.message}');
-      if (e.message.contains('Connection refused')) {
-        throw const RestorationException(
-          type: RestorationError.connectionRefused,
-          message: '서버 연결이 거부되었습니다. 서버가 실행 중인지 확인해주세요.',
-          failureCode: 'E-C10',
-        );
-      }
-      throw RestorationException(
-        type: RestorationError.serverUnavailable,
-        message: '이미지 다운로드 중 서버 연결 오류: ${e.message}',
-      );
     } on TimeoutException {
       debugPrint('[Restoration] Error: TimeoutException — download timeout');
       throw const RestorationException(
@@ -434,6 +404,14 @@ class RestorationService {
       );
     } catch (e) {
       debugPrint('[Restoration] Error: ${e.runtimeType} — $e');
+      if (e.toString().contains('Connection refused') ||
+          e.toString().contains('SocketException')) {
+        throw const RestorationException(
+          type: RestorationError.connectionRefused,
+          message: '서버 연결이 거부되었습니다. 서버가 실행 중인지 확인해주세요.',
+          failureCode: 'E-C10',
+        );
+      }
       throw RestorationException(
         type: RestorationError.serverUnavailable,
         message: '이미지 다운로드 중 오류 발생: $e',
@@ -452,10 +430,6 @@ class RestorationService {
       final ok = response.statusCode == 200;
       debugPrint('[Restoration] Health: ${ok ? "OK" : "FAIL(${response.statusCode})"} in ${stopwatch.elapsedMilliseconds}ms');
       return ok;
-    } on SocketException {
-      stopwatch.stop();
-      debugPrint('[Restoration] Health: UNREACHABLE in ${stopwatch.elapsedMilliseconds}ms');
-      return false;
     } on TimeoutException {
       stopwatch.stop();
       debugPrint('[Restoration] Health: TIMEOUT in ${stopwatch.elapsedMilliseconds}ms');

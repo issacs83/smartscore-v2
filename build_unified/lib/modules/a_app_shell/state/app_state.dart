@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../../b_score_input/score_library.dart';
+import '../../b_score_input/score_library_web.dart';
 import '../../e_music_normalizer/musicxml_parser.dart';
 import '../../k_external_device/device_manager.dart';
 import '../../k_external_device/device_action.dart';
@@ -9,10 +9,13 @@ import '../../k_external_device/keyboard_adapter.dart';
 /// Holds references to all major modules and their states
 class AppState extends ChangeNotifier {
   // Module references
-  ScoreLibrary? moduleB;
+  MemoryScoreLibrary? moduleB;
   MusicXmlParser? moduleE;
   // Module F is function-based (computePageLayout), no class instance needed
   DeviceManager? moduleK;
+
+  /// Whether running on web platform
+  bool get isWeb => kIsWeb;
 
   // State
   String? _activeScoreId;
@@ -32,14 +35,16 @@ class AppState extends ChangeNotifier {
 
   /// Initialize app state asynchronously
   static Future<AppState> initialize() async {
-    debugPrint('[AppState] Initializing...');
+    debugPrint('[AppState] Initializing... (web: $kIsWeb)');
     final state = AppState();
     state._bootTime = DateTime.now();
 
-    // Initialize Module B
-    state.moduleB = ScoreLibrary('./smartscore_data');
+    // Use MemoryScoreLibrary on all platforms for now.
+    // File-system ScoreLibrary can be activated later for native platforms
+    // once directory access is properly tested.
+    state.moduleB = MemoryScoreLibrary();
     await state.moduleB!.initialize();
-    debugPrint('[AppState] Module B initialized');
+    debugPrint('[AppState] Module B initialized (memory mode)');
 
     // Initialize Module E
     state.moduleE = MusicXmlParser();
@@ -134,6 +139,7 @@ class AppState extends ChangeNotifier {
       'eventLogLength': _eventLog.length,
       'bootTime': _bootTime.toIso8601String(),
       'uptime': DateTime.now().difference(_bootTime).inMilliseconds,
+      'isWeb': kIsWeb,
     };
   }
 }

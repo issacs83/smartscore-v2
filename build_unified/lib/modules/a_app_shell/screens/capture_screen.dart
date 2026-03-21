@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -112,21 +113,21 @@ class _CaptureScreenState extends State<CaptureScreen> {
       String? newScoreId;
 
       if (fileType == 'pdf') {
-        // Call Module B.importPdf()
-        final result = await library.moduleB?.importPdf(filePath);
-        if (result?.isSuccess ?? false) {
-          newScoreId = result!.valueOrNull!.id;
-          success = true;
+        // PDF file-path import not available with MemoryScoreLibrary
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('PDF 가져오기는 현재 지원되지 않습니다.')),
+          );
         }
       } else if (fileType == 'musicxml') {
-        // Call Module B.importMusicXml()
-        final result = await library.moduleB?.importMusicXml(filePath);
+        // MusicXML import via content string
+        final result = await library.moduleB?.importMusicXml(filePath, fileName: filePath.split('/').last);
         if (result?.isSuccess ?? false) {
           newScoreId = result!.valueOrNull!.id;
           success = true;
         }
       } else if (fileType == 'image') {
-        // Call Module B.importImage()
+        // Image import via bytes
         final bytes = await _readFileAsBytes(filePath);
         final fileName = filePath.split('/').last;
         final result = await library.moduleB?.importImage(bytes, fileName);

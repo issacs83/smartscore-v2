@@ -1,12 +1,12 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../../b_score_input/score_entry.dart';
-import '../../b_score_input/score_library.dart';
+import '../../b_score_input/score_library_web.dart';
+// Note: dart:io is NOT imported — this provider works on web
 
 /// Score library provider - wraps Module B
 class ScoreLibraryProvider extends ChangeNotifier {
-  final ScoreLibrary? moduleB;
+  final MemoryScoreLibrary? moduleB;
   List<Map<String, dynamic>> _allScores = [];
   String? _selectedScoreId;
   bool _isLoading = false;
@@ -43,9 +43,8 @@ class ScoreLibraryProvider extends ChangeNotifier {
                 'measureCount': 0,
               })
           .toList();
-      _allScores.sort((a, b) =>
-          DateTime.parse(b['dateImported'])
-              .compareTo(DateTime.parse(a['dateImported'])));
+      _allScores.sort((a, b) => DateTime.parse(b['dateImported'])
+          .compareTo(DateTime.parse(a['dateImported'])));
       _lastError = null;
     } catch (e) {
       _lastError = e.toString();
@@ -133,11 +132,7 @@ class ScoreLibraryProvider extends ChangeNotifier {
       final versionInfo = score.getVersion(VersionType.originalImage);
       if (versionInfo == null) return null;
 
-      final file = File(versionInfo.filePath);
-      if (await file.exists()) {
-        return await file.readAsBytes();
-      }
-      return null;
+      return moduleB!.getFileBytes(versionInfo.filePath);
     } catch (e) {
       debugPrint('[ScoreLibraryProvider] getImageBytes error: $e');
       return null;
@@ -158,6 +153,7 @@ class ScoreLibraryProvider extends ChangeNotifier {
       'isLoading': _isLoading,
       'lastError': _lastError,
       'scores': _allScores,
+      'isWebMode': true,
     };
   }
 }
