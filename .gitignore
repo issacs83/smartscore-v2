@@ -14,6 +14,11 @@ pubspec.lock
 *.swp
 *.swo
 
+# Node
+node_modules/
+package.json
+package-lock.json
+
 # OS
 .DS_Store
 Thumbs.db
