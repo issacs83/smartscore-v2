@@ -29,18 +29,39 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>smartscore_build</title>
+  <title>SmartScore</title>
   <link rel="manifest" href="manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    body { margin: 0; overflow: hidden; background: #FFFFF5; }
+    #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; font-family: sans-serif; color: #555; }
+    #loading .spinner { width: 40px; height: 40px; border: 4px solid #ddd; border-top: 4px solid #4285F4; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>SmartScore 로딩 중...</div>
+  </div>
+  <script>
+    // Use local CanvasKit instead of CDN (for offline/LAN testing)
+    window.flutterConfiguration = {
+      canvasKitBaseUrl: "/canvaskit/"
+    };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Hide loading indicator once Flutter renders
+    window.addEventListener('flutter-first-frame', function() {
+      var loading = document.getElementById('loading');
+      if (loading) loading.remove();
+    });
+    // Fallback: hide after 15 seconds
+    setTimeout(function() {
+      var loading = document.getElementById('loading');
+      if (loading) loading.remove();
+    }, 15000);
+  </script>
 </body>
 </html>
