@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
+import '../../b_score_input/score_library.dart';
 
 /// Score library provider - wraps Module B
 class ScoreLibraryProvider extends ChangeNotifier {
-  final dynamic moduleB; // ScoreLibrary instance
+  final ScoreLibrary? moduleB;
   List<Map<String, dynamic>> _allScores = [];
   String? _selectedScoreId;
   bool _isLoading = false;
@@ -27,28 +28,22 @@ class ScoreLibraryProvider extends ChangeNotifier {
         throw Exception('Module B not initialized');
       }
 
-      // Call Module B.getLibrary()
-      final result = await moduleB.getLibrary();
-
-      if (result.ok) {
-        _allScores = (result.value as List)
-            .map((score) => {
-                  'id': score.id,
-                  'title': score.title,
-                  'composer': score.composer ?? '',
-                  'sourceType': score.sourceType.toString(),
-                  'dateImported': score.dateImported.toIso8601String(),
-                  'pageCount': score.pageCount ?? 0,
-                  'measureCount': score.measureCount ?? 0,
-                })
-            .toList();
-        _allScores.sort((a, b) =>
-            DateTime.parse(b['dateImported'])
-                .compareTo(DateTime.parse(a['dateImported'])));
-      } else {
-        _lastError = result.error?.message ?? 'Unknown error';
-        debugPrint('[ScoreLibraryProvider] Load failed: $_lastError');
-      }
+      final results = await moduleB!.getLibrary();
+      _allScores = results
+          .map((score) => {
+                'id': score.id,
+                'title': score.title,
+                'composer': score.composer ?? '',
+                'sourceType': score.sourceType.toString(),
+                'dateImported': score.createdAt.toIso8601String(),
+                'pageCount': score.pageCount ?? 0,
+                'measureCount': score.measureCount ?? 0,
+              })
+          .toList();
+      _allScores.sort((a, b) =>
+          DateTime.parse(b['dateImported'])
+              .compareTo(DateTime.parse(a['dateImported'])));
+      _lastError = null;
     } catch (e) {
       _lastError = e.toString();
       debugPrint('[ScoreLibraryProvider] Load exception: $e');
@@ -65,21 +60,19 @@ class ScoreLibraryProvider extends ChangeNotifier {
         throw Exception('Module B not initialized');
       }
 
-      final result = await moduleB.getScore(scoreId);
-      if (result.ok) {
-        final score = result.value;
+      final score = await moduleB!.getScore(scoreId);
+      if (score != null) {
         return {
           'id': score.id,
           'title': score.title,
           'composer': score.composer ?? '',
           'sourceType': score.sourceType.toString(),
-          'dateImported': score.dateImported.toIso8601String(),
+          'dateImported': score.createdAt.toIso8601String(),
           'pageCount': score.pageCount ?? 0,
           'measureCount': score.measureCount ?? 0,
-          'scoreJson': score.scoreJson, // Raw JSON from Module E
         };
       } else {
-        _lastError = result.error?.message ?? 'Unknown error';
+        _lastError = 'Score not found';
         return null;
       }
     } catch (e) {
@@ -96,8 +89,8 @@ class ScoreLibraryProvider extends ChangeNotifier {
         throw Exception('Module B not initialized');
       }
 
-      final result = await moduleB.deleteScore(scoreId);
-      if (result.ok) {
+      final result = await moduleB!.deleteScore(scoreId);
+      if (result) {
         _allScores.removeWhere((s) => s['id'] == scoreId);
         if (_selectedScoreId == scoreId) {
           _selectedScoreId = null;
@@ -106,7 +99,7 @@ class ScoreLibraryProvider extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        _lastError = result.error?.message ?? 'Delete failed';
+        _lastError = 'Delete failed';
         notifyListeners();
         return false;
       }

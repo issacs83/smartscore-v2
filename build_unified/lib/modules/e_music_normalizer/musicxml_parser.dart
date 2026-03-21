@@ -1,4 +1,5 @@
 import 'package:xml/xml.dart';
+import 'package:uuid/uuid.dart';
 import 'score_json.dart';
 
 
@@ -641,10 +642,6 @@ class MusicXmlParser {
   }
 
   String _generateUuid() {
-    // Simple UUID v4 generation (not cryptographically secure, but good enough for demo)
-    final chars = '0123456789abcdef'.split('');
-    final random = List.generate(16, (_) => (DateTime.now().millisecondsSinceEpoch % 16).toString().padLeft(1, '0'));
-    final uuid = '${random.sublist(0, 4).join('')}-${random.sublist(4, 6).join('')}-4${random.sublist(7, 10).join('')}-${random.sublist(10, 12).join('')}-${random.sublist(12, 16).join('')}';
-    return uuid;
+    return const Uuid().v4();
   }
 }

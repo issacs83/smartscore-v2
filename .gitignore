@@ -39,3 +39,15 @@ build_unified/pubspec.lock
 # Test outputs
 *.log
 coverage/
+
+# Sensitive files
+.env
+.env.*
+*.key
+*.pem
+*.p12
+credentials*.json
+.claude/settings.local.json
+
+# Restoration output
+restoration_output/

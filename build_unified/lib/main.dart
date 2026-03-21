@@ -92,8 +92,8 @@ class ErrorBoundary extends StatefulWidget {
 
   const ErrorBoundary({
     required this.child,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<ErrorBoundary> createState() => _ErrorBoundaryState();
@@ -103,10 +103,6 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   @override
   void initState() {
     super.initState();
-    // Set up global error handler
-    FlutterError.onError = (details) {
-      _showErrorDialog(details);
-    };
   }
 
   void _showErrorDialog(FlutterErrorDetails details) {
@@ -128,7 +124,8 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
                 ),
                 const SizedBox(height: 16),
                 if (kDebugMode)
-                  Expanded(
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 200),
                     child: SingleChildScrollView(
                       child: SelectableText(
                         details.exceptionAsString(),

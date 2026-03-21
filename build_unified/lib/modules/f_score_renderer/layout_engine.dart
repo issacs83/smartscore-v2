@@ -2,19 +2,52 @@
 /// Pure Dart implementation with no Flutter dependencies
 
 import 'models.dart';
+import '../e_music_normalizer/score_json.dart' as score_model;
+
+/// Convert noteType string to fractional duration (fraction of whole note)
+double _noteTypeFraction(String noteType) {
+  return switch (noteType) {
+    'whole' => 1.0,
+    'half' => 0.5,
+    'quarter' => 0.25,
+    'eighth' => 0.125,
+    'sixteenth' => 0.0625,
+    'thirty-second' => 0.03125,
+    _ => 0.25,
+  };
+}
+
+/// Derive accidental string from alter value
+String? _alterToAccidental(int alter) {
+  return switch (alter) {
+    -2 => 'bb',
+    -1 => 'b',
+    1 => '#',
+    2 => '##',
+    _ => null,
+  };
+}
 
 /// Compute complete page layout
 PageLayout computePageLayout(
-  Score score,
+  score_model.Score score,
   int partIndex,
   int pageNumber,
   LayoutConfig config,
 ) {
-  if (score.totalMeasures == 0) {
+  // Get part
+  if (partIndex < 0 || partIndex >= score.parts.length) {
     return _emptyPageLayout(pageNumber, config);
   }
 
-  if (pageNumber < 0 || pageNumber >= getTotalPages(score.totalMeasures, config)) {
+  final part = score.parts[partIndex];
+  final totalMeasures = part.measures.length;
+
+  if (totalMeasures == 0) {
+    return _emptyPageLayout(pageNumber, config);
+  }
+
+  if (pageNumber < 0 || pageNumber >= getTotalPages(totalMeasures, config)) {
     return _emptyPageLayout(pageNumber, config);
   }
 
@@ -22,13 +55,19 @@ PageLayout computePageLayout(
   final measuresPerPage = config.measuresPerSystem * config.systemsPerPage;
   final startMeasure = pageNumber * measuresPerPage;
   final endMeasure = ((pageNumber + 1) * measuresPerPage)
-      .clamp(0, score.totalMeasures)
+      .clamp(0, totalMeasures)
       .toInt();
 
-  // Get part info
-  final part = partIndex < score.parts.length ? score.parts[partIndex] : null;
-  if (part == null) {
-    return _emptyPageLayout(pageNumber, config);
+  // Determine clef from first measure
+  String clefType = 'treble';
+  if (part.measures.isNotEmpty && part.measures[0].clefs.isNotEmpty) {
+    final sign = part.measures[0].clefs[0].sign;
+    clefType = switch (sign) {
+      'G' => 'treble',
+      'F' => 'bass',
+      'C' => 'alto',
+      _ => 'treble',
+    };
   }
 
   // Build systems for this page
@@ -41,8 +80,6 @@ PageLayout computePageLayout(
   );
 
   final usableWidth = config.pageWidth - config.leftMargin - config.rightMargin;
-  final usableHeight =
-      config.pageHeight - config.topMargin - config.bottomMargin;
 
   double currentY = config.topMargin;
   int systemIndex = 0;
@@ -61,12 +98,12 @@ PageLayout computePageLayout(
 
     // Calculate proportional widths for measures in this system
     final systemLayout = _computeSystemLayout(
-      score,
+      part,
       systemMeasures,
       systemIndex,
       currentY,
       usableWidth,
-      part.clef,
+      clefType,
       config,
     );
 
@@ -80,7 +117,7 @@ PageLayout computePageLayout(
 
   return PageLayout(
     pageNumber: pageNumber,
-    totalPages: getTotalPages(score.totalMeasures, config),
+    totalPages: getTotalPages(totalMeasures, config),
     canvasWidth: config.pageWidth,
     canvasHeight: config.pageHeight,
     systems: systems,
@@ -91,7 +128,7 @@ PageLayout computePageLayout(
 
 /// Compute single system (row of measures)
 SystemLayout _computeSystemLayout(
-  Score score,
+  score_model.Part part,
   List<int> measureIndices,
   int systemNumber,
   double yPosition,
@@ -104,16 +141,17 @@ SystemLayout _computeSystemLayout(
   final measureDurations = <int, double>{};
 
   for (final measureIdx in measureIndices) {
-    if (measureIdx < score.measures.length) {
-      final measure = score.measures[measureIdx];
+    if (measureIdx < part.measures.length) {
+      final measure = part.measures[measureIdx];
       double measureDuration = 0.0;
 
-      // Sum all note and rest durations
-      for (final note in measure.notes) {
-        measureDuration += note.duration;
-      }
-      for (final rest in measure.rests) {
-        measureDuration += rest.duration;
+      // Sum all note and rest durations using element types
+      for (final element in measure.elements) {
+        if (element is score_model.NoteElement) {
+          measureDuration += _noteTypeFraction(element.noteType);
+        } else if (element is score_model.RestElement) {
+          measureDuration += _noteTypeFraction(element.noteType);
+        }
       }
 
       // Default to 1.0 (4/4) if empty
@@ -132,9 +170,9 @@ SystemLayout _computeSystemLayout(
   double currentX = config.leftMargin;
 
   for (final measureIdx in measureIndices) {
-    if (measureIdx >= score.measures.length) break;
+    if (measureIdx >= part.measures.length) break;
 
-    final measure = score.measures[measureIdx];
+    final measure = part.measures[measureIdx];
     final proportionalWidth =
         (measureDurations[measureIdx] ?? 1.0) / totalDuration * usableWidth;
 
@@ -234,7 +272,7 @@ List<StaveLayout> _buildStaves(
 
 /// Compute single measure layout
 MeasureLayout _computeMeasureLayout(
-  Measure measure,
+  score_model.Measure measure,
   int measureIndex,
   double xPosition,
   double yPosition,
@@ -246,13 +284,14 @@ MeasureLayout _computeMeasureLayout(
   final noteLayouts = <NoteLayout>[];
   final staveCount = clefType == 'grand' || clefType == 'treble_bass' ? 2 : 1;
 
-  // Add notes
-  for (final note in measure.notes) {
+  // Process notes
+  int noteIdx = 0;
+  for (final note in measure.elements.whereType<score_model.NoteElement>()) {
     final effectiveStaff = (note.staff >= staveCount) ? staveCount - 1 : note.staff;
-    final noteY = _pitchToStaffY(note.step, note.octave, clefType, effectiveStaff, config);
+    final noteY = _pitchToStaffY(note.pitch.step, note.pitch.octave, clefType, effectiveStaff, config);
 
     final noteLayout = NoteLayout(
-      elementId: note.id,
+      elementId: 'note_${measureIndex}_$noteIdx',
       pitch: note.pitch,
       noteType: note.noteType,
       bounds: Rect(
@@ -264,19 +303,21 @@ MeasureLayout _computeMeasureLayout(
       staff: effectiveStaff,
       voice: note.voice,
       isRest: false,
-      stemDirection: note.octave >= 5 ? 'down' : 'up',
+      stemDirection: note.pitch.octave >= 5 ? 'down' : 'up',
       dots: note.dots,
-      accidental: note.accidental,
-      isInChord: note.isInChord,
-      hasArticulation: note.hasArticulation,
-      hasDynamic: note.hasDynamic,
+      accidental: _alterToAccidental(note.pitch.alter),
+      isInChord: note.isChordMember,
+      hasArticulation: note.articulations.isNotEmpty,
+      hasDynamic: note.dynamicMarking != null,
     );
 
     noteLayouts.add(noteLayout);
+    noteIdx++;
   }
 
-  // Add rests
-  for (final rest in measure.rests) {
+  // Process rests
+  int restIdx = 0;
+  for (final rest in measure.elements.whereType<score_model.RestElement>()) {
     final effectiveStaff = (rest.staff >= staveCount) ? staveCount - 1 : rest.staff;
     // Rests typically centered on middle line of staff
     final staveLayout =
@@ -284,8 +325,8 @@ MeasureLayout _computeMeasureLayout(
     final restY = staveLayout.bounds.y + (config.staffHeight / 2);
 
     final restLayout = NoteLayout(
-      elementId: rest.id,
-      pitch: Pitch(step: 'B', octave: 4),
+      elementId: 'rest_${measureIndex}_$restIdx',
+      pitch: score_model.Pitch(step: 'B', octave: 4),
       noteType: rest.noteType,
       bounds: Rect(
         x: xPosition + width * 0.4,
@@ -300,6 +341,7 @@ MeasureLayout _computeMeasureLayout(
     );
 
     noteLayouts.add(restLayout);
+    restIdx++;
   }
 
   final bounds = Rect(
@@ -312,15 +354,21 @@ MeasureLayout _computeMeasureLayout(
   // Build staves for bounds
   final staves = _buildStaves(clefType, yPosition, config);
 
+  // Derive key signature string
+  String? keySignatureStr;
+  if (measure.keySignature != null) {
+    keySignatureStr = '${measure.keySignature!.step} ${measure.keySignature!.tonality}';
+  }
+
   return MeasureLayout(
     measureNumber: measureIndex,
     bounds: bounds,
     notes: noteLayouts,
     staves: staves,
     timeSignature: measure.timeSignature,
-    keySignature: measure.keySignature,
-    hasRepeatStart: measure.hasRepeatStart,
-    hasRepeatEnd: measure.hasRepeatEnd,
+    keySignature: keySignatureStr,
+    hasRepeatStart: measure.repeatStart,
+    hasRepeatEnd: measure.repeatEnd,
     rehearsalMark: measure.rehearsalMark,
     startMeasure: measureIndex,
     endMeasure: measureIndex,

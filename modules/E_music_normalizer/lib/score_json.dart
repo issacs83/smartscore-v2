@@ -249,7 +249,7 @@ enum InstrumentType {
   soprano('soprano'),
   alto('alto'),
   tenor('tenor'),
-  bassVoice('bass'),
+  bassVoice('bass_voice'),
   guitar('guitar'),
   banjo('banjo'),
   ukulele('ukulele'),

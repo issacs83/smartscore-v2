@@ -1,13 +1,19 @@
 import 'package:flutter/foundation.dart';
+import '../../b_score_input/score_library.dart';
+import '../../e_music_normalizer/musicxml_parser.dart';
+import '../../k_external_device/device_manager.dart';
+import '../../k_external_device/device_adapter.dart';
+import '../../k_external_device/device_action.dart';
+import '../../k_external_device/keyboard_adapter.dart';
 
 /// Central application state
 /// Holds references to all major modules and their states
 class AppState extends ChangeNotifier {
   // Module references
-  dynamic moduleB; // ScoreLibrary
-  dynamic moduleE; // MusicXmlParser
-  dynamic moduleF; // LayoutEngine
-  dynamic moduleK; // DeviceManager
+  ScoreLibrary? moduleB;
+  MusicXmlParser? moduleE;
+  // Module F is function-based (computePageLayout), no class instance needed
+  DeviceManager? moduleK;
 
   // State
   String? _activeScoreId;
@@ -23,18 +29,31 @@ class AppState extends ChangeNotifier {
   List<Map<String, dynamic>> get eventLog => _eventLog;
   DateTime get bootTime => _bootTime;
 
-  AppState({
-    this.moduleB,
-    this.moduleE,
-    this.moduleF,
-    this.moduleK,
-  });
+  AppState();
 
   /// Initialize app state asynchronously
   static Future<AppState> initialize() async {
     debugPrint('[AppState] Initializing...');
     final state = AppState();
     state._bootTime = DateTime.now();
+
+    // Initialize Module B
+    state.moduleB = ScoreLibrary('./smartscore_data');
+    await state.moduleB!.initialize();
+    debugPrint('[AppState] Module B initialized');
+
+    // Initialize Module E
+    state.moduleE = MusicXmlParser();
+    debugPrint('[AppState] Module E initialized');
+
+    // Initialize Module K with keyboard adapter
+    state.moduleK = DeviceManager(
+      adapters: {
+        DeviceType.keyboard: KeyboardAdapter(),
+      },
+    );
+    debugPrint('[AppState] Module K initialized');
+
     debugPrint('[AppState] Initialized at ${state._bootTime}');
     return state;
   }

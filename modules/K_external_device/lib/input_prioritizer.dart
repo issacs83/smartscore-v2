@@ -96,7 +96,7 @@ class InputPrioritizer {
 
   InputPrioritizer({PrioritizerLogger? logger})
       : logger = logger ?? DefaultPrioritizerLogger(),
-        _actionController = StreamController<DeviceAction>.broadcast();
+        _actionController = StreamController<DeviceAction>.broadcast(sync: true);
 
   /// Stream of processed device actions.
   Stream<DeviceAction> get onAction => _actionController.stream;
@@ -118,24 +118,18 @@ class InputPrioritizer {
     }
 
     // Check priority: conflicting actions within priority window
+    // Once an action has been emitted, no other source can emit it within the window
     final lastAction = _lastActionTime[event.action];
     if (lastAction != null &&
-        now.difference(lastAction.time) < priorityWindow) {
-      // There's a recent conflicting action from another source
-      // Check if this event's source has higher priority
-      final currentPriority =
-          priorityOrder.indexOf(event.source);
-      final lastPriority = priorityOrder.indexOf(lastAction.source);
-
-      if (currentPriority > lastPriority) {
-        // Lower priority source trying to emit after higher priority source
-        logger.logRejected(
-          event,
-          'Rejected by priority: ${lastAction.source} (priority ${lastPriority}) '
-              'already emitted within ${priorityWindow.inMilliseconds}ms',
-        );
-        return;
-      }
+        now.difference(lastAction.time) < priorityWindow &&
+        lastAction.source != event.source) {
+      // Another source recently emitted this action - reject this attempt
+      logger.logRejected(
+        event,
+        'Rejected by priority: ${lastAction.source} '
+            'already emitted within ${priorityWindow.inMilliseconds}ms',
+      );
+      return;
     }
 
     // Event passes all filters - emit it

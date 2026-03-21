@@ -6,14 +6,15 @@ import '../state/score_renderer_provider.dart';
 import '../state/ui_state_provider.dart';
 import '../state/device_provider.dart';
 import '../widgets/page_indicator.dart';
+import '../../e_music_normalizer/score_json.dart' as score_model;
 
 class ScoreViewerScreen extends StatefulWidget {
   final String scoreId;
 
   const ScoreViewerScreen({
     required this.scoreId,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<ScoreViewerScreen> createState() => _ScoreViewerScreenState();
@@ -48,25 +49,43 @@ class _ScoreViewerScreenState extends State<ScoreViewerScreen> {
     }
   }
 
+  score_model.Score? _parsedScore;
+
+  score_model.Score? _getScore() {
+    if (_parsedScore != null) return _parsedScore;
+    if (_scoreData == null) return null;
+    try {
+      final scoreJson = _scoreData!['scoreJson'];
+      if (scoreJson is Map<String, dynamic>) {
+        _parsedScore = score_model.Score.fromJson(scoreJson);
+      }
+    } catch (e) {
+      debugPrint('[ScoreViewerScreen] Failed to parse score: $e');
+    }
+    return _parsedScore;
+  }
+
   void _nextPage() {
-    if (_scoreData != null) {
+    final score = _getScore();
+    if (score != null) {
       final renderer =
           Provider.of<ScoreRendererProvider>(context, listen: false);
       final layoutConfig =
           Provider.of<UIStateProvider>(context, listen: false)
               .getLayoutConfig();
-      renderer.nextPage(_scoreData!['scoreJson'] ?? {}, layoutConfig.toJson());
+      renderer.nextPage(score, 0, layoutConfig);
     }
   }
 
   void _previousPage() {
-    if (_scoreData != null) {
+    final score = _getScore();
+    if (score != null) {
       final renderer =
           Provider.of<ScoreRendererProvider>(context, listen: false);
       final layoutConfig =
           Provider.of<UIStateProvider>(context, listen: false)
               .getLayoutConfig();
-      renderer.previousPage(_scoreData!['scoreJson'] ?? {}, layoutConfig.toJson());
+      renderer.previousPage(score, 0, layoutConfig);
     }
   }
 

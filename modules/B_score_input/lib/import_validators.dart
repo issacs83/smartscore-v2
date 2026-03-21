@@ -181,6 +181,12 @@ Future<ImportError?> validateMusicXml(String content) async {
       return ImportError.xmlMalformed;
     }
 
+    // XXE defense: reject XML with DOCTYPE/ENTITY declarations
+    if (content.contains('<!DOCTYPE') || content.contains('<!ENTITY')) {
+      logger.warn(_module, 'MusicXML contains DOCTYPE/ENTITY declarations (XXE defense)');
+      return ImportError.xmlMalformed;
+    }
+
     // Try to parse XML
     final document = XmlDocument.parse(content);
 

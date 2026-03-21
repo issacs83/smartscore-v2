@@ -173,21 +173,15 @@ class ScoreValidator {
         for (final element in measure.elements) {
           if (element is NoteElement || element is RestElement) {
             final duration = element is NoteElement ? element.duration : (element as RestElement).duration;
-            final dots = element is NoteElement ? element.dots : (element as RestElement).dots;
 
-            // Calculate actual duration with dots
-            int adjustedDuration = duration;
-            for (int i = 0; i < dots; i++) {
-              adjustedDuration += (duration / (2 << i)).toInt();
-            }
-
+            // Duration already includes dot adjustments from the parser
             // Only count non-chord members or first chord member
             if (element is NoteElement) {
               if (!element.isChordMember) {
-                actualDuration += adjustedDuration;
+                actualDuration += duration;
               }
             } else {
-              actualDuration += adjustedDuration;
+              actualDuration += duration;
             }
           }
         }

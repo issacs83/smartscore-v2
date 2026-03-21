@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../config.dart';
+import '../../f_score_renderer/models.dart';
 
 /// UI state provider for app-level settings
 class UIStateProvider extends ChangeNotifier {
@@ -59,12 +60,13 @@ class UIStateProvider extends ChangeNotifier {
     }
   }
 
-  /// Get current layout configuration
+  /// Get current layout configuration using the models.dart LayoutConfig
   LayoutConfig getLayoutConfig() {
     return LayoutConfig(
       measuresPerSystem: _measuresPerSystem,
       systemsPerPage: _systemsPerPage,
-      zoomLevel: _zoomLevel,
+      zoom: _zoomLevel,
+      darkMode: _darkMode,
     );
   }
 
@@ -76,50 +78,6 @@ class UIStateProvider extends ChangeNotifier {
       'debugMode': _debugMode,
       'systemsPerPage': _systemsPerPage,
       'measuresPerSystem': _measuresPerSystem,
-    };
-  }
-}
-
-/// Layout configuration
-class LayoutConfig {
-  final int measuresPerSystem;
-  final int systemsPerPage;
-  final double zoomLevel;
-
-  // Standard page dimensions (inches)
-  final double pageWidth;
-  final double pageHeight;
-
-  // Margins (points)
-  final double topMargin;
-  final double bottomMargin;
-  final double leftMargin;
-  final double rightMargin;
-
-  LayoutConfig({
-    required this.measuresPerSystem,
-    required this.systemsPerPage,
-    required this.zoomLevel,
-    this.pageWidth = 8.5, // Letter width in inches
-    this.pageHeight = 11.0, // Letter height in inches
-    this.topMargin = 40,
-    this.bottomMargin = 40,
-    this.leftMargin = 40,
-    this.rightMargin = 40,
-  });
-
-  /// Convert to JSON for Module F
-  Map<String, dynamic> toJson() {
-    return {
-      'measuresPerSystem': measuresPerSystem,
-      'systemsPerPage': systemsPerPage,
-      'zoomLevel': zoomLevel,
-      'pageWidth': pageWidth,
-      'pageHeight': pageHeight,
-      'topMargin': topMargin,
-      'bottomMargin': bottomMargin,
-      'leftMargin': leftMargin,
-      'rightMargin': rightMargin,
     };
   }
 }

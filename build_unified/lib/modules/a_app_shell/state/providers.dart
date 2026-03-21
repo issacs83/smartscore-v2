@@ -19,9 +19,9 @@ List<ChangeNotifierProvider<dynamic>> createProviders(AppState appState) {
       create: (_) => ScoreLibraryProvider(appState.moduleB),
     ),
 
-    // Score renderer (Module F)
+    // Score renderer (Module F) - function-based, no module instance
     ChangeNotifierProvider<ScoreRendererProvider>(
-      create: (_) => ScoreRendererProvider(appState.moduleF),
+      create: (_) => ScoreRendererProvider(),
     ),
 
     // Device management (Module K)

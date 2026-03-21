@@ -5,6 +5,82 @@ import 'package:test/test.dart';
 import 'package:smartscore_build/modules/f_score_renderer/models.dart';
 import 'package:smartscore_build/modules/f_score_renderer/layout_engine.dart';
 import 'package:smartscore_build/modules/f_score_renderer/hit_test.dart';
+import 'package:smartscore_build/modules/e_music_normalizer/score_json.dart' as score_model;
+
+score_model.Score _makeScore({
+  required List<score_model.Part> parts,
+}) {
+  return score_model.Score(
+    id: '00000000-0000-0000-0000-000000000001',
+    title: 'Test',
+    composer: '',
+    parts: parts,
+    metadata: score_model.ScoreMetadata(format: '1.0', source: 'test'),
+  );
+}
+
+score_model.Part _makePart({
+  required List<score_model.Measure> measures,
+  List<score_model.Clef>? clefs,
+}) {
+  if (clefs != null && measures.isNotEmpty) {
+    measures = [
+      measures[0].copyWith(clefs: clefs),
+      ...measures.sublist(1),
+    ];
+  }
+  return score_model.Part(
+    id: 'P1',
+    name: 'Test',
+    instrumentType: score_model.InstrumentType.generic,
+    staveCount: 1,
+    measures: measures,
+  );
+}
+
+score_model.Measure _makeMeasure({
+  int number = 0,
+  String? timeSignature,
+  List<score_model.Element> elements = const [],
+}) {
+  return score_model.Measure(
+    number: number,
+    elements: elements,
+    timeSignature: timeSignature,
+  );
+}
+
+score_model.NoteElement _makeNote({
+  String step = 'C',
+  int octave = 4,
+  int alter = 0,
+  String noteType = 'quarter',
+  int staff = 0,
+  int voice = 0,
+  int duration = 4,
+}) {
+  return score_model.NoteElement(
+    pitch: score_model.Pitch(step: step, octave: octave, alter: alter),
+    duration: duration,
+    noteType: noteType,
+    staff: staff,
+    voice: voice,
+  );
+}
+
+score_model.RestElement _makeRest({
+  String noteType = 'quarter',
+  int staff = 0,
+  int voice = 0,
+  int duration = 4,
+}) {
+  return score_model.RestElement(
+    duration: duration,
+    noteType: noteType,
+    staff: staff,
+    voice: voice,
+  );
+}
 
 void main() {
   group('Hit Test Tests', () {
@@ -25,64 +101,28 @@ void main() {
         zoom: 1.0,
       );
 
-      // Create a simple score
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
         timeSignature: '4/4',
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
-          Note(
-            id: 'N2',
-            step: 'D',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
-        ],
-        rests: [
-          Rest(
-            id: 'R1',
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 4),
+          _makeNote(step: 'D', octave: 4, noteType: 'quarter', duration: 4),
+          _makeRest(noteType: 'quarter', duration: 4),
         ],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       pageLayout = computePageLayout(score, 0, 0, config);
     });
 
     test('Hit on note returns correct note', () {
       final note = pageLayout.systems[0].measures[0].notes[0];
 
-      // Click in the center of the note
       final result = hitTest(
         note.bounds.x + (note.bounds.width / 2),
         note.bounds.y + (note.bounds.height / 2),
@@ -91,7 +131,7 @@ void main() {
 
       expect(result, isNotNull);
       expect(result!.type, HitType.note);
-      expect(result.noteId, 'N1');
+      expect(result.noteId, 'note_0_0');
       expect(result.measureNumber, 0);
       expect(result.confidence, 1.0);
     });
@@ -100,7 +140,6 @@ void main() {
       final rest = pageLayout.systems[0].measures[0].notes
           .firstWhere((n) => n.isRest);
 
-      // Click in the center of the rest
       final result = hitTest(
         rest.bounds.x + (rest.bounds.width / 2),
         rest.bounds.y + (rest.bounds.height / 2),
@@ -115,7 +154,6 @@ void main() {
     test('Hit on measure returns measure', () {
       final measure = pageLayout.systems[0].measures[0];
 
-      // Click in an empty area of the measure (not on a note)
       final result = hitTest(
         measure.bounds.x + measure.bounds.width * 0.8,
         measure.bounds.y + measure.bounds.height * 0.5,
@@ -128,14 +166,12 @@ void main() {
     });
 
     test('Hit on empty area returns empty', () {
-      // Click in area with no measures
       final result = hitTest(
         500.0,
         1000.0,
         pageLayout,
       );
 
-      // May return staff or empty
       expect(
         result == null || result.type == HitType.staff || result.type == HitType.empty,
         true,
@@ -145,7 +181,6 @@ void main() {
     test('Hit on staff returns staff type', () {
       final stave = pageLayout.systems[0].staves[0];
 
-      // Click on the staff line
       final result = hitTest(
         stave.bounds.x + 50,
         stave.bounds.y + (stave.bounds.height / 2),
@@ -160,7 +195,6 @@ void main() {
     test('Hit boundary: exactly on note bounds', () {
       final note = pageLayout.systems[0].measures[0].notes[0];
 
-      // Hit exactly on the boundary
       final result = hitTest(
         note.bounds.x,
         note.bounds.y,
@@ -174,14 +208,12 @@ void main() {
     test('Hit boundary: just outside note bounds', () {
       final note = pageLayout.systems[0].measures[0].notes[0];
 
-      // Hit just outside the note
       final result = hitTest(
         note.bounds.x - 5,
         note.bounds.y - 5,
         pageLayout,
       );
 
-      // Should not hit the note
       if (result != null) {
         expect(result.type, isNot(HitType.note));
       }
@@ -219,13 +251,12 @@ void main() {
 
       expect(result, isNotNull);
       expect(result!.type, HitType.note);
-      expect(result.noteId, 'N2');
+      expect(result.noteId, 'note_0_1');
     });
 
     test('Multiple hits returns most specific element (note over measure)', () {
       final note = pageLayout.systems[0].measures[0].notes[0];
 
-      // Point is on both note and measure; should return note
       final result = hitTest(
         note.bounds.x + (note.bounds.width / 2),
         note.bounds.y + (note.bounds.height / 2),
@@ -240,42 +271,23 @@ void main() {
     test('Beat calculation within measure', () {
       final config = LayoutConfig();
 
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
         timeSignature: '4/4',
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 4),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [
-          Part(
-            id: 'P1',
-            name: 'Test',
-            instrument: 'test',
-            staves: ['S1'],
-            clef: 'treble',
-          )
-        ],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
       final timeSigs = {0: '4/4'};
 
-      // Click at start of measure
       final result = hitTestWithBeat(
         layout.systems[0].measures[0].bounds.x,
         layout.systems[0].measures[0].bounds.y +
@@ -294,52 +306,23 @@ void main() {
     test('notesInRegion returns notes within region', () {
       final config = LayoutConfig();
 
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
-          Note(
-            id: 'N2',
-            step: 'D',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 4),
+          _makeNote(step: 'D', octave: 4, noteType: 'quarter', duration: 4),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [
-          Part(
-            id: 'P1',
-            name: 'Test',
-            instrument: 'test',
-            staves: ['S1'],
-            clef: 'treble',
-          )
-        ],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
 
-      // Create a region covering the entire measure
       final region = layout.systems[0].measures[0].bounds;
-
       final notes = notesInRegion(region, layout);
 
       expect(notes.length, greaterThan(0));
@@ -348,37 +331,19 @@ void main() {
     test('measuresInRegion returns measures within region', () {
       final config = LayoutConfig();
 
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 4),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [
-          Part(
-            id: 'P1',
-            name: 'Test',
-            instrument: 'test',
-            staves: ['S1'],
-            clef: 'treble',
-          )
-        ],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
 
       final region = Rect(

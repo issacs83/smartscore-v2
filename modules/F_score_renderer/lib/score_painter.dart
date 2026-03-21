@@ -180,12 +180,12 @@ class ScoreView extends StatelessWidget {
   final BoxDecoration? decoration;
 
   const ScoreView({
-    Key? key,
+    super.key,
     required this.commands,
     required this.width,
     required this.height,
     this.decoration,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

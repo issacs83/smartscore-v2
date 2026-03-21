@@ -1,5 +1,7 @@
 /// Pure Dart models for score rendering (no Flutter dependencies)
 
+import '../e_music_normalizer/score_json.dart' as score_model;
+
 /// Simple rectangle model (no Flutter dependency)
 class Rect {
   final double x;
@@ -111,31 +113,6 @@ class LayoutConfig {
   }
 }
 
-/// Pitch representation
-class Pitch {
-  final String step; // A-G
-  final int octave; // 0-8
-  final int alter; // -2, -1, 0, 1, 2 (double-flat to double-sharp)
-
-  Pitch({
-    required this.step,
-    required this.octave,
-    this.alter = 0,
-  });
-
-  /// MIDI note number (C4 = 60)
-  int get midiNumber {
-    final stepValues = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11};
-    return (octave + 1) * 12 + (stepValues[step] ?? 0) + alter;
-  }
-
-  @override
-  String toString() {
-    final alterStr = alter > 0 ? '+$alter' : (alter < 0 ? '$alter' : '');
-    return '$step$octave$alterStr';
-  }
-}
-
 /// Staff layout information
 class StaveLayout {
   final String clefType; // treble, bass, alto, tenor
@@ -154,7 +131,7 @@ class StaveLayout {
 /// Note layout information
 class NoteLayout {
   final String elementId;
-  final Pitch pitch;
+  final score_model.Pitch pitch;
   final String noteType; // whole, half, quarter, eighth, sixteenth
   final Rect bounds; // note head bounds
   final int staff; // 0-indexed within part
@@ -282,7 +259,7 @@ class HitTestResult {
   final HitType type;
   final int? measureNumber;
   final String? noteId;
-  final Pitch? pitch;
+  final score_model.Pitch? pitch;
   final double? beat;
   final int? staffIndex;
   final int? systemIndex;
@@ -402,185 +379,3 @@ class RenderState {
   });
 }
 
-/// Score JSON models (simplified)
-class Score {
-  final String format;
-  final List<Part> parts;
-  final List<Measure> measures;
-  final String? title;
-  final String? composer;
-
-  Score({
-    required this.format,
-    required this.parts,
-    required this.measures,
-    this.title,
-    this.composer,
-  });
-
-  int get totalMeasures => measures.length;
-
-  factory Score.fromJson(Map<String, dynamic> json) {
-    return Score(
-      format: json['format'] ?? '1.0',
-      parts: (json['parts'] as List?)
-              ?.map((p) => Part.fromJson(p as Map<String, dynamic>))
-              .toList() ??
-          [],
-      measures: (json['measures'] as List?)
-              ?.map((m) => Measure.fromJson(m as Map<String, dynamic>))
-              .toList() ??
-          [],
-      title: json['title'] as String?,
-      composer: json['composer'] as String?,
-    );
-  }
-}
-
-class Part {
-  final String id;
-  final String name;
-  final String instrument;
-  final List<String> staves;
-  final String clef;
-
-  Part({
-    required this.id,
-    required this.name,
-    required this.instrument,
-    required this.staves,
-    required this.clef,
-  });
-
-  factory Part.fromJson(Map<String, dynamic> json) {
-    return Part(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      instrument: json['instrument'] ?? '',
-      staves: List<String>.from(json['staves'] as List? ?? []),
-      clef: json['clef'] ?? 'treble',
-    );
-  }
-}
-
-class Measure {
-  final int number;
-  final String? timeSignature;
-  final String? keySignature;
-  final List<Note> notes;
-  final List<Rest> rests;
-  final bool hasRepeatStart;
-  final bool hasRepeatEnd;
-  final String? rehearsalMark;
-
-  Measure({
-    required this.number,
-    this.timeSignature,
-    this.keySignature,
-    required this.notes,
-    required this.rests,
-    this.hasRepeatStart = false,
-    this.hasRepeatEnd = false,
-    this.rehearsalMark,
-  });
-
-  factory Measure.fromJson(Map<String, dynamic> json) {
-    return Measure(
-      number: json['number'] ?? 0,
-      timeSignature: json['timeSignature'] as String?,
-      keySignature: json['keySignature'] as String?,
-      notes: (json['notes'] as List?)
-              ?.map((n) => Note.fromJson(n as Map<String, dynamic>))
-              .toList() ??
-          [],
-      rests: (json['rests'] as List?)
-              ?.map((r) => Rest.fromJson(r as Map<String, dynamic>))
-              .toList() ??
-          [],
-      hasRepeatStart: json['hasRepeatStart'] ?? false,
-      hasRepeatEnd: json['hasRepeatEnd'] ?? false,
-      rehearsalMark: json['rehearsalMark'] as String?,
-    );
-  }
-}
-
-class Note {
-  final String id;
-  final String step;
-  final int octave;
-  final int alter;
-  final String noteType;
-  final int staff;
-  final int voice;
-  final int dots;
-  final String? accidental;
-  final bool isInChord;
-  final bool hasArticulation;
-  final bool hasDynamic;
-  final double duration; // fraction of whole note
-
-  Note({
-    required this.id,
-    required this.step,
-    required this.octave,
-    required this.alter,
-    required this.noteType,
-    required this.staff,
-    required this.voice,
-    this.dots = 0,
-    this.accidental,
-    this.isInChord = false,
-    this.hasArticulation = false,
-    this.hasDynamic = false,
-    this.duration = 0.25,
-  });
-
-  Pitch get pitch => Pitch(step: step, octave: octave, alter: alter);
-
-  factory Note.fromJson(Map<String, dynamic> json) {
-    return Note(
-      id: json['id'] ?? '',
-      step: json['step'] ?? 'C',
-      octave: json['octave'] ?? 4,
-      alter: json['alter'] ?? 0,
-      noteType: json['noteType'] ?? 'quarter',
-      staff: json['staff'] ?? 0,
-      voice: json['voice'] ?? 0,
-      dots: json['dots'] ?? 0,
-      accidental: json['accidental'] as String?,
-      isInChord: json['isInChord'] ?? false,
-      hasArticulation: json['hasArticulation'] ?? false,
-      hasDynamic: json['hasDynamic'] ?? false,
-      duration: (json['duration'] as num?)?.toDouble() ?? 0.25,
-    );
-  }
-}
-
-class Rest {
-  final String id;
-  final String noteType;
-  final int staff;
-  final int voice;
-  final int dots;
-  final double duration;
-
-  Rest({
-    required this.id,
-    required this.noteType,
-    required this.staff,
-    required this.voice,
-    this.dots = 0,
-    this.duration = 0.25,
-  });
-
-  factory Rest.fromJson(Map<String, dynamic> json) {
-    return Rest(
-      id: json['id'] ?? '',
-      noteType: json['noteType'] ?? 'quarter',
-      staff: json['staff'] ?? 0,
-      voice: json['voice'] ?? 0,
-      dots: json['dots'] ?? 0,
-      duration: (json['duration'] as num?)?.toDouble() ?? 0.25,
-    );
-  }
-}

@@ -2,10 +2,11 @@
 /// Pure Dart implementation with no Flutter dependencies
 
 import 'models.dart';
+import '../e_music_normalizer/score_json.dart' as score_model;
 
 /// Generate render commands for a page
 List<RenderCommand> generateRenderCommands(
-  Score score,
+  score_model.Score score,
   PageLayout layout,
   RenderState state,
 ) {

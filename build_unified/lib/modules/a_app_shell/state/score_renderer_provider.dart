@@ -1,52 +1,51 @@
 import 'package:flutter/foundation.dart';
+import '../../e_music_normalizer/score_json.dart' as score_model;
+import '../../f_score_renderer/layout_engine.dart' as layout;
+import '../../f_score_renderer/models.dart';
+import '../../f_score_renderer/render_commands.dart' as render;
+import '../../f_score_renderer/hit_test.dart' as hit;
 
-/// Score renderer provider - wraps Module F
+/// Score renderer provider - wraps Module F functions
 class ScoreRendererProvider extends ChangeNotifier {
-  final dynamic moduleF; // LayoutEngine instance
   int _currentPage = 0;
   int _totalPages = 1;
-  Map<String, dynamic> _currentPageLayout = {};
+  PageLayout? _currentPageLayout;
+  List<RenderCommand> _currentRenderCommands = [];
   String? _lastError;
   bool _isRendering = false;
 
-  ScoreRendererProvider(this.moduleF);
+  ScoreRendererProvider();
 
   // Getters
   int get currentPage => _currentPage;
   int get totalPages => _totalPages;
-  Map<String, dynamic> get currentPageLayout => _currentPageLayout;
+  PageLayout? get currentPageLayout => _currentPageLayout;
+  List<RenderCommand> get currentRenderCommands => _currentRenderCommands;
   String? get lastError => _lastError;
   bool get isRendering => _isRendering;
 
-  /// Render a page
-  Future<bool> renderPage(
-    Map<String, dynamic> scoreJson,
+  /// Render a page from a typed Score
+  bool renderPage(
+    score_model.Score score,
+    int partIndex,
     int pageNumber,
-    Map<String, dynamic> layoutConfig,
-  ) async {
+    LayoutConfig config,
+  ) {
     _isRendering = true;
     _lastError = null;
     notifyListeners();
 
     try {
-      if (moduleF == null) {
-        throw Exception('Module F not initialized');
-      }
-
-      // Get total pages first
-      final totalPagesResult = await moduleF.getTotalPages(
-        scoreJson,
-        layoutConfig,
-      );
-
-      if (!totalPagesResult.ok) {
-        _lastError = totalPagesResult.error?.message ?? 'Unknown error';
+      // Get total measures for the part
+      if (partIndex < 0 || partIndex >= score.parts.length) {
+        _lastError = 'Invalid part index: $partIndex';
         _isRendering = false;
         notifyListeners();
         return false;
       }
 
-      _totalPages = totalPagesResult.value as int;
+      final totalMeasures = score.parts[partIndex].measures.length;
+      _totalPages = layout.getTotalPages(totalMeasures, config);
 
       // Validate page number
       if (pageNumber < 0 || pageNumber >= _totalPages) {
@@ -56,26 +55,23 @@ class ScoreRendererProvider extends ChangeNotifier {
         return false;
       }
 
-      // Render the page via Module F
-      final renderResult = await moduleF.renderPage(
-        scoreJson,
-        pageNumber,
-        layoutConfig,
-      );
+      // Compute layout
+      final pageLayout = layout.computePageLayout(score, partIndex, pageNumber, config);
 
-      if (renderResult.ok) {
-        _currentPage = pageNumber;
-        _currentPageLayout = renderResult.value as Map<String, dynamic>;
-        _lastError = null;
-        _isRendering = false;
-        notifyListeners();
-        return true;
-      } else {
-        _lastError = renderResult.error?.message ?? 'Render failed';
-        _isRendering = false;
-        notifyListeners();
-        return false;
-      }
+      // Generate render commands
+      final renderState = RenderState(
+        currentMeasure: null,
+        darkMode: config.darkMode,
+      );
+      final commands = render.generateRenderCommands(score, pageLayout, renderState);
+
+      _currentPage = pageNumber;
+      _currentPageLayout = pageLayout;
+      _currentRenderCommands = commands;
+      _lastError = null;
+      _isRendering = false;
+      notifyListeners();
+      return true;
     } catch (e) {
       _lastError = e.toString();
       debugPrint('[ScoreRendererProvider] Render error: $e');
@@ -86,78 +82,37 @@ class ScoreRendererProvider extends ChangeNotifier {
   }
 
   /// Go to next page
-  Future<bool> nextPage(
-    Map<String, dynamic> scoreJson,
-    Map<String, dynamic> layoutConfig,
-  ) async {
+  bool nextPage(
+    score_model.Score score,
+    int partIndex,
+    LayoutConfig config,
+  ) {
     if (_currentPage >= _totalPages - 1) {
       return false;
     }
-    return renderPage(scoreJson, _currentPage + 1, layoutConfig);
+    return renderPage(score, partIndex, _currentPage + 1, config);
   }
 
   /// Go to previous page
-  Future<bool> previousPage(
-    Map<String, dynamic> scoreJson,
-    Map<String, dynamic> layoutConfig,
-  ) async {
+  bool previousPage(
+    score_model.Score score,
+    int partIndex,
+    LayoutConfig config,
+  ) {
     if (_currentPage <= 0) {
       return false;
     }
-    return renderPage(scoreJson, _currentPage - 1, layoutConfig);
+    return renderPage(score, partIndex, _currentPage - 1, config);
   }
 
   /// Hit test - find element at position
-  Future<Map<String, dynamic>?> hitTest(
-    Map<String, dynamic> scoreJson,
-    double x,
-    double y,
-    Map<String, dynamic> layoutConfig,
-  ) async {
+  HitTestResult? performHitTest(double x, double y) {
+    if (_currentPageLayout == null) return null;
+
     try {
-      if (moduleF == null) {
-        return null;
-      }
-
-      final result = await moduleF.hitTest(
-        scoreJson,
-        x,
-        y,
-        layoutConfig,
-      );
-
-      if (result.ok) {
-        return result.value as Map<String, dynamic>;
-      }
-      return null;
+      return hit.hitTest(x, y, _currentPageLayout!);
     } catch (e) {
       debugPrint('[ScoreRendererProvider] Hit test error: $e');
-      return null;
-    }
-  }
-
-  /// Get measure information at page and position
-  Future<Map<String, dynamic>?> getMeasureAtPosition(
-    Map<String, dynamic> scoreJson,
-    double x,
-    double y,
-  ) async {
-    try {
-      if (moduleF == null) {
-        return null;
-      }
-
-      final hitResult = await hitTest(scoreJson, x, y, {});
-      if (hitResult != null) {
-        return {
-          'measureNumber': hitResult['measureNumber'],
-          'part': hitResult['part'],
-          'staff': hitResult['staff'],
-        };
-      }
-      return null;
-    } catch (e) {
-      debugPrint('[ScoreRendererProvider] getMeasureAtPosition error: $e');
       return null;
     }
   }
@@ -172,7 +127,8 @@ class ScoreRendererProvider extends ChangeNotifier {
   void reset() {
     _currentPage = 0;
     _totalPages = 1;
-    _currentPageLayout = {};
+    _currentPageLayout = null;
+    _currentRenderCommands = [];
     _lastError = null;
     _isRendering = false;
     notifyListeners();
@@ -185,7 +141,8 @@ class ScoreRendererProvider extends ChangeNotifier {
       'totalPages': _totalPages,
       'isRendering': _isRendering,
       'lastError': _lastError,
-      'pageLayoutKeys': _currentPageLayout.keys.toList(),
+      'hasPageLayout': _currentPageLayout != null,
+      'renderCommandCount': _currentRenderCommands.length,
     };
   }
 }

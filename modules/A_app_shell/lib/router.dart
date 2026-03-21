@@ -9,7 +9,7 @@ import 'screens/capture_screen.dart';
 import 'screens/debug_screen.dart';
 
 /// Creates the GoRouter configuration for the app
-GoRouter createRouter(BuildContext context) {
+GoRouter createRouter() {
   return GoRouter(
     initialLocation: '/',
     debugLogDiagnostics: kDebugMode,

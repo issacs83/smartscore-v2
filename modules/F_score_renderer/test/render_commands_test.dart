@@ -5,12 +5,114 @@ import 'package:test/test.dart';
 import 'package:smartscore_build/modules/f_score_renderer/models.dart';
 import 'package:smartscore_build/modules/f_score_renderer/layout_engine.dart';
 import 'package:smartscore_build/modules/f_score_renderer/render_commands.dart';
+import 'package:smartscore_build/modules/e_music_normalizer/score_json.dart' as score_model;
+
+score_model.Score _makeScore({
+  required List<score_model.Part> parts,
+}) {
+  return score_model.Score(
+    id: '00000000-0000-0000-0000-000000000001',
+    title: 'Test',
+    composer: '',
+    parts: parts,
+    metadata: score_model.ScoreMetadata(format: '1.0', source: 'test'),
+  );
+}
+
+score_model.Part _makePart({
+  required List<score_model.Measure> measures,
+  List<score_model.Clef>? clefs,
+}) {
+  if (clefs != null && measures.isNotEmpty) {
+    measures = [
+      measures[0].copyWith(clefs: clefs),
+      ...measures.sublist(1),
+    ];
+  }
+  return score_model.Part(
+    id: 'P1',
+    name: 'Test',
+    instrumentType: score_model.InstrumentType.generic,
+    staveCount: 1,
+    measures: measures,
+  );
+}
+
+score_model.Measure _makeMeasure({
+  int number = 0,
+  String? timeSignature,
+  String? rehearsalMark,
+  List<score_model.Element> elements = const [],
+}) {
+  return score_model.Measure(
+    number: number,
+    elements: elements,
+    timeSignature: timeSignature,
+    rehearsalMark: rehearsalMark,
+  );
+}
+
+score_model.NoteElement _makeNote({
+  String step = 'C',
+  int octave = 4,
+  int alter = 0,
+  String noteType = 'quarter',
+  int staff = 0,
+  int voice = 0,
+  int duration = 4,
+  int dots = 0,
+  List<String> articulations = const [],
+  String? dynamicMarking,
+}) {
+  return score_model.NoteElement(
+    pitch: score_model.Pitch(step: step, octave: octave, alter: alter),
+    duration: duration,
+    noteType: noteType,
+    staff: staff,
+    voice: voice,
+    dots: dots,
+    articulations: articulations,
+    dynamicMarking: dynamicMarking,
+  );
+}
+
+score_model.RestElement _makeRest({
+  String noteType = 'quarter',
+  int staff = 0,
+  int voice = 0,
+  int duration = 4,
+}) {
+  return score_model.RestElement(
+    duration: duration,
+    noteType: noteType,
+    staff: staff,
+    voice: voice,
+  );
+}
+
+score_model.Score _createSimpleScore() {
+  final measure = _makeMeasure(
+    number: 0,
+    timeSignature: '4/4',
+    elements: [
+      _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 4),
+    ],
+  );
+
+  final part = _makePart(
+    measures: [measure],
+    clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
+  );
+
+  return _makeScore(parts: [part]);
+}
 
 void main() {
   group('Render Commands Tests', () {
     late LayoutConfig config;
     late PageLayout pageLayout;
     late List<RenderCommand> commands;
+    late score_model.Score testScore;
 
     setUp(() {
       config = LayoutConfig(
@@ -26,65 +128,30 @@ void main() {
         zoom: 1.0,
       );
 
-      // Create a simple score
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
         timeSignature: '4/4',
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
-          Note(
-            id: 'N2',
-            step: 'G',
-            octave: 4,
-            alter: 0,
-            noteType: 'half',
-            staff: 0,
-            voice: 0,
-            duration: 0.5,
-          ),
-        ],
-        rests: [
-          Rest(
-            id: 'R1',
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 4),
+          _makeNote(step: 'G', octave: 4, noteType: 'half', duration: 8),
+          _makeRest(noteType: 'quarter', duration: 4),
         ],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
-      pageLayout = computePageLayout(score, 0, 0, config);
+      testScore = _makeScore(parts: [part]);
+      pageLayout = computePageLayout(testScore, 0, 0, config);
 
       final state = RenderState(
         darkMode: false,
         highlightColor: 'blue',
       );
 
-      commands = generateRenderCommands(score, pageLayout, state);
+      commands = generateRenderCommands(testScore, pageLayout, state);
     });
 
     test('Generates render commands list', () {
@@ -94,13 +161,10 @@ void main() {
 
     test('Contains staff lines (5 per staff)', () {
       final lineCommands = commands.whereType<DrawLine>();
-
-      // Staff lines should be present
       expect(lineCommands.length, greaterThan(0));
 
-      // For one staff, we should have at least 5 horizontal lines
       final horizontalLines = lineCommands
-          .where((cmd) => (cmd.y1 - cmd.y2).abs() < 0.1) // Horizontal (y values equal)
+          .where((cmd) => (cmd.y1 - cmd.y2).abs() < 0.1)
           .toList();
 
       expect(horizontalLines.length, greaterThanOrEqualTo(5));
@@ -108,17 +172,13 @@ void main() {
 
     test('Contains note heads for non-rest notes', () {
       final ovalCommands = commands.whereType<DrawOval>();
-
-      // Should have ovals for note heads
       expect(ovalCommands.length, greaterThan(0));
     });
 
     test('Contains barlines', () {
       final lineCommands = commands.whereType<DrawLine>();
-
-      // Should have vertical lines for barlines
       final verticalLines = lineCommands
-          .where((cmd) => (cmd.x1 - cmd.x2).abs() < 0.1) // Vertical (x values equal)
+          .where((cmd) => (cmd.x1 - cmd.x2).abs() < 0.1)
           .toList();
 
       expect(verticalLines.length, greaterThan(0));
@@ -126,7 +186,6 @@ void main() {
 
     test('Time signature is rendered', () {
       final textCommands = commands.whereType<DrawText>();
-
       final timeSigTexts = textCommands
           .where((cmd) => cmd.text.contains('/'))
           .toList();
@@ -136,152 +195,83 @@ void main() {
     });
 
     test('Whole notes are hollow (not filled)', () {
-      // Create score with whole note
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'whole',
-            staff: 0,
-            voice: 0,
-            duration: 1.0,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'whole', duration: 16),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
       final state = RenderState(darkMode: false);
       final cmds = generateRenderCommands(score, layout, state);
 
       final ovals = cmds.whereType<DrawOval>();
-
-      // Should have at least one oval for the whole note
       expect(ovals.length, greaterThan(0));
 
-      // Whole note should not be filled
-      final wholeNoteOvals =
-          ovals.where((o) => !o.filled).toList();
+      final wholeNoteOvals = ovals.where((o) => !o.filled).toList();
       expect(wholeNoteOvals.length, greaterThan(0));
     });
 
     test('Accidentals are rendered as text', () {
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'F',
-            octave: 4,
-            alter: 1,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-            accidental: '#',
-          ),
+        elements: [
+          _makeNote(step: 'F', octave: 4, alter: 1, noteType: 'quarter', duration: 4),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
       final state = RenderState(darkMode: false);
       final cmds = generateRenderCommands(score, layout, state);
 
       final textCommands = cmds.whereType<DrawText>();
-
-      final accidentals =
-          textCommands.where((t) => t.text == '#').toList();
+      final accidentals = textCommands.where((t) => t.text == '#').toList();
       expect(accidentals.length, greaterThan(0));
     });
 
     test('Augmentation dots are rendered', () {
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [
-          Note(
-            id: 'N1',
-            step: 'C',
-            octave: 4,
-            alter: 0,
-            noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.375,
-            dots: 1,
-          ),
+        elements: [
+          _makeNote(step: 'C', octave: 4, noteType: 'quarter', duration: 6, dots: 1),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
       final state = RenderState(darkMode: false);
       final cmds = generateRenderCommands(score, layout, state);
 
       final ovals = cmds.whereType<DrawOval>();
-
-      // Should have dots (small filled ovals)
       final dots = ovals.where((o) => o.filled && o.rx < 5).toList();
       expect(dots.length, greaterThan(0));
     });
 
     test('Rests are rendered', () {
       final rectCommands = commands.whereType<DrawRect>();
-
-      // Rests should be rendered as filled rectangles
       expect(rectCommands.length, greaterThan(0));
     });
 
     test('Background is rendered', () {
       final rects = commands.whereType<DrawRect>();
-
-      // First command should be background
       final backgroundRects = rects
           .where((r) =>
               r.x == 0 &&
@@ -298,15 +288,11 @@ void main() {
       final cmds = generateRenderCommands(_createSimpleScore(), pageLayout, state);
 
       final textCommands = cmds.whereType<DrawText>();
-
-      // Dark mode should have lighter text (typically white/light gray)
       for (final text in textCommands) {
-        // Color should be light
         if (text.color.startsWith('#')) {
           final hexColor = text.color.replaceFirst('#', '');
           if (hexColor.length == 6) {
             final colorValue = int.parse(hexColor, radix: 16);
-            // Light colors have high RGB values
             expect(colorValue, greaterThan(0x999999));
           }
         }
@@ -322,8 +308,6 @@ void main() {
       final cmds = generateRenderCommands(_createSimpleScore(), pageLayout, state);
 
       final rects = cmds.whereType<DrawRect>();
-
-      // Should have a highlight rect for current measure
       final highlights = rects
           .where((r) =>
               r.color == 'blue' &&
@@ -335,130 +319,64 @@ void main() {
     });
 
     test('Rehearsal mark is rendered when present', () {
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [],
-        rests: [],
         rehearsalMark: 'A',
+        elements: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
       final state = RenderState(darkMode: false);
       final cmds = generateRenderCommands(score, layout, state);
 
       final textCommands = cmds.whereType<DrawText>();
-
-      final rehearsalMarks =
-          textCommands.where((t) => t.text == 'A').toList();
+      final rehearsalMarks = textCommands.where((t) => t.text == 'A').toList();
       expect(rehearsalMarks.length, greaterThan(0));
     });
 
     test('Stems are rendered for notes', () {
       final lines = commands.whereType<DrawLine>();
-
-      // Should have stems (vertical lines from note heads)
-      final stems =
-          lines.where((l) => (l.x1 - l.x2).abs() < 0.1).toList();
-
+      final stems = lines.where((l) => (l.x1 - l.x2).abs() < 0.1).toList();
       expect(stems.length, greaterThan(0));
     });
 
     test('Note with articulation has visual indicator', () {
-      final part = Part(
-        id: 'P1',
-        name: 'Test',
-        instrument: 'test',
-        staves: ['S1'],
-        clef: 'treble',
-      );
-
-      final measure = Measure(
+      final measure = _makeMeasure(
         number: 0,
-        notes: [
-          Note(
-            id: 'N1',
+        elements: [
+          _makeNote(
             step: 'C',
             octave: 4,
-            alter: 0,
             noteType: 'quarter',
-            staff: 0,
-            voice: 0,
-            duration: 0.25,
-            hasArticulation: true,
+            duration: 4,
+            articulations: ['staccato'],
           ),
         ],
-        rests: [],
       );
 
-      final score = Score(
-        format: '1.0',
-        parts: [part],
+      final part = _makePart(
         measures: [measure],
+        clefs: [score_model.Clef(sign: 'G', line: 2, staff: 0)],
       );
 
+      final score = _makeScore(parts: [part]);
       final layout = computePageLayout(score, 0, 0, config);
       final state = RenderState(darkMode: false);
       final cmds = generateRenderCommands(score, layout, state);
 
       final ovals = cmds.whereType<DrawOval>();
-
-      // Should have articulation indicator (small dot)
       expect(ovals.length, greaterThan(0));
     });
 
     test('Multiple notes in measure are rendered', () {
       final ovals = commands.whereType<DrawOval>();
-
-      // Score has 2 notes, should have at least 2 note head ovals
       expect(ovals.length, greaterThanOrEqualTo(2));
     });
   });
-}
-
-Score _createSimpleScore() {
-  final part = Part(
-    id: 'P1',
-    name: 'Test',
-    instrument: 'test',
-    staves: ['S1'],
-    clef: 'treble',
-  );
-
-  final measure = Measure(
-    number: 0,
-    timeSignature: '4/4',
-    notes: [
-      Note(
-        id: 'N1',
-        step: 'C',
-        octave: 4,
-        alter: 0,
-        noteType: 'quarter',
-        staff: 0,
-        voice: 0,
-        duration: 0.25,
-      ),
-    ],
-    rests: [],
-  );
-
-  return Score(
-    format: '1.0',
-    parts: [part],
-    measures: [measure],
-  );
 }

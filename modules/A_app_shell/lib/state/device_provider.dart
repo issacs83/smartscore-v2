@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
+import '../../k_external_device/device_manager.dart';
+import '../../k_external_device/device_adapter.dart';
+import '../../k_external_device/device_action.dart';
 
 /// Device provider - wraps Module K
 class DeviceProvider extends ChangeNotifier {
-  final dynamic moduleK; // DeviceManager instance
+  final DeviceManager? moduleK;
   List<Map<String, dynamic>> _connectedDevices = [];
   Map<String, dynamic>? _lastAction;
   bool _isScanning = false;
@@ -25,14 +28,13 @@ class DeviceProvider extends ChangeNotifier {
 
     // Listen to device actions from Module K
     try {
-      moduleK.onAction.listen(
+      moduleK!.onAction.listen(
         (action) {
           _lastAction = {
-            'type': action.type.toString(),
+            'type': action.toString(),
             'timestamp': DateTime.now().toIso8601String(),
-            'data': action.data,
           };
-          debugPrint('[DeviceProvider] Action: ${action.type}');
+          debugPrint('[DeviceProvider] Action: $action');
           notifyListeners();
         },
         onError: (error) {
@@ -47,7 +49,7 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   /// Scan for devices
-  Future<void> scanDevices(String deviceType) async {
+  Future<void> scanDevices(DeviceType deviceType) async {
     _isScanning = true;
     _lastError = null;
     notifyListeners();
@@ -58,7 +60,7 @@ class DeviceProvider extends ChangeNotifier {
       }
 
       // Scan via Module K
-      moduleK.scan(deviceType).listen(
+      moduleK!.scan(deviceType).listen(
         (device) {
           // Device found - can be connected by UI
           debugPrint('[DeviceProvider] Found device: ${device.name}');
@@ -81,17 +83,17 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   /// Connect to a device
-  Future<bool> connectDevice(String deviceType, String deviceId) async {
+  Future<bool> connectDevice(DeviceType deviceType, String deviceId) async {
     try {
       if (moduleK == null) {
         throw Exception('Module K not initialized');
       }
 
-      final device = await moduleK.connect(deviceType, deviceId);
+      final device = await moduleK!.connect(deviceType, deviceId);
       _connectedDevices.add({
         'id': device.id,
         'name': device.name,
-        'type': deviceType,
+        'type': deviceType.toString(),
         'connectedAt': DateTime.now().toIso8601String(),
       });
       _lastError = null;
@@ -107,18 +109,20 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   /// Disconnect a device
-  Future<bool> disconnectDevice(String deviceId) async {
+  Future<bool> disconnectDevice(DeviceType deviceType, String deviceId) async {
     try {
       if (moduleK == null) {
         throw Exception('Module K not initialized');
       }
 
-      await moduleK.disconnect(deviceId);
-      _connectedDevices.removeWhere((d) => d['id'] == deviceId);
-      _lastError = null;
-      debugPrint('[DeviceProvider] Disconnected device: $deviceId');
-      notifyListeners();
-      return true;
+      final result = await moduleK!.disconnect(deviceType, deviceId);
+      if (result) {
+        _connectedDevices.removeWhere((d) => d['id'] == deviceId);
+        _lastError = null;
+        debugPrint('[DeviceProvider] Disconnected device: $deviceId');
+        notifyListeners();
+      }
+      return result;
     } catch (e) {
       _lastError = e.toString();
       debugPrint('[DeviceProvider] Disconnect error: $e');
@@ -134,7 +138,7 @@ class DeviceProvider extends ChangeNotifier {
         return [];
       }
 
-      final devices = moduleK.getConnectedDevices() ?? [];
+      final devices = moduleK!.getConnectedDevices();
       return devices
           .map((d) => {
                 'id': d.id,
