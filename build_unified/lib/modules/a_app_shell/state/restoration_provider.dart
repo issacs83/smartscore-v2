@@ -58,6 +58,9 @@ class RestorationProvider extends ChangeNotifier {
   /// Human-readable image size info (e.g. "25.3MB")
   String? get imageSizeInfo => _imageSizeInfo;
 
+  /// Server base URL for debug display
+  String get serverUrl => _service.baseUrl;
+
   /// Get the currently displayed restored image bytes
   Uint8List? get currentRestoredBytes =>
       _showBinary ? _binaryImageBytes : _grayscaleImageBytes;
@@ -120,6 +123,9 @@ class RestorationProvider extends ChangeNotifier {
     String fileName,
   ) async {
     _originalImageBytes = imageBytes;
+    final sizeKB = (imageBytes.lengthInBytes / 1024).round();
+    debugPrint('[RestorationProvider] Image: ${sizeKB}KB');
+    debugPrint('[RestorationProvider] State: ${_state.name} -> loading');
     _state = RestorationState.loading;
     _errorMessage = null;
     _errorCode = null;
@@ -131,9 +137,19 @@ class RestorationProvider extends ChangeNotifier {
     _imageSizeInfo = _service.getImageSizeMB(imageBytes);
     _imageSizeWarning = _service.isImageSizeLarge(imageBytes);
 
+    debugPrint(
+      '[RestorationProvider] Options: '
+      'perspective=${_options.perspectiveCorrection}, '
+      'deskew=${_options.deskew}, '
+      'shadow=${_options.shadowRemoval}, '
+      'contrast=${_options.contrastEnhancement}, '
+      'binarization=${_options.binarizationMethod}',
+    );
+
     // Validate image size (reject >50MB)
     final sizeError = _service.validateImageSize(imageBytes);
     if (sizeError != null) {
+      debugPrint('[RestorationProvider] State: loading -> error (size validation)');
       _state = RestorationState.error;
       _errorMessage = sizeError.userMessage;
       _errorCode = sizeError.failureCode;
@@ -151,6 +167,7 @@ class RestorationProvider extends ChangeNotifier {
       );
 
       if (!result.success) {
+        debugPrint('[RestorationProvider] State: loading -> error (restoration failed)');
         _state = RestorationState.error;
         _errorCode = result.failureCode;
         _errorMessage = getKoreanErrorMessage(
@@ -167,20 +184,24 @@ class RestorationProvider extends ChangeNotifier {
       // Download result images
       await downloadResults(result);
 
+      debugPrint('[RestorationProvider] State: loading -> success');
       _state = RestorationState.success;
       _comparisonMode = ComparisonMode.comparison;
       debugPrint(
         '[RestorationProvider] Restoration complete. '
-        'Quality: ${result.qualityScore}',
+        'Quality: ${result.qualityScore}, '
+        'Time: ${result.processingTimeMs.round()}ms',
       );
       notifyListeners();
     } on RestorationException catch (e) {
+      debugPrint('[RestorationProvider] State: loading -> error');
       _state = RestorationState.error;
       _errorCode = e.failureCode;
       _errorMessage = e.userMessage;
       debugPrint('[RestorationProvider] Restoration error: $e');
       notifyListeners();
     } catch (e) {
+      debugPrint('[RestorationProvider] State: loading -> error');
       _state = RestorationState.error;
       _errorMessage = '예상치 못한 오류가 발생했습니다: $e';
       debugPrint('[RestorationProvider] Unexpected error: $e');

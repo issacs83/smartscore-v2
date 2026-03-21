@@ -293,6 +293,10 @@ class RestorationService {
       '&binarization=${opts.binarizationMethod}',
     );
 
+    final sizeKB = (imageBytes.lengthInBytes / 1024).round();
+    debugPrint('[Restoration] POST /api/restore — size: ${sizeKB}KB, file: $fileName');
+    final stopwatch = Stopwatch()..start();
+
     try {
       final request = http.MultipartRequest('POST', uri);
       request.files.add(http.MultipartFile.fromBytes(
@@ -304,6 +308,8 @@ class RestorationService {
       final streamedResponse =
           await request.send().timeout(_restoreTimeout);
       final body = await streamedResponse.stream.bytesToString();
+      stopwatch.stop();
+      debugPrint('[Restoration] Response: ${streamedResponse.statusCode} in ${stopwatch.elapsedMilliseconds}ms');
 
       if (streamedResponse.statusCode == 200) {
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -327,9 +333,11 @@ class RestorationService {
           message: 'Server returned ${streamedResponse.statusCode}: $body',
         );
       }
-    } on RestorationException {
+    } on RestorationException catch (e) {
+      debugPrint('[Restoration] Error: ${e.type.name} — ${e.message}');
       rethrow;
     } on SocketException catch (e) {
+      debugPrint('[Restoration] Error: SocketException — ${e.message}');
       if (e.osError?.errorCode == 111 ||
           e.osError?.errorCode == 10061 ||
           e.message.contains('Connection refused')) {
@@ -345,12 +353,14 @@ class RestorationService {
         failureCode: 'E-C99',
       );
     } on TimeoutException {
+      debugPrint('[Restoration] Error: TimeoutException — restore timeout');
       throw const RestorationException(
         type: RestorationError.timeout,
         message: '처리 시간이 초과되었습니다. 다시 시도해주세요.',
         failureCode: 'E-C08',
       );
     } catch (e) {
+      debugPrint('[Restoration] Error: ${e.runtimeType} — $e');
       if (e.toString().contains('TimeoutException')) {
         throw const RestorationException(
           type: RestorationError.timeout,
@@ -380,15 +390,22 @@ class RestorationService {
         ? imagePath
         : '$baseUrl$imagePath';
 
+    final stopwatch = Stopwatch()..start();
+
     try {
       final response = await _client
           .get(Uri.parse(url))
           .timeout(_downloadTimeout);
 
+      stopwatch.stop();
+
       if (response.statusCode == 200) {
+        final sizeKB = (response.bodyBytes.lengthInBytes / 1024).round();
+        debugPrint('[Restoration] Download: $imagePath — ${sizeKB}KB in ${stopwatch.elapsedMilliseconds}ms');
         return response.bodyBytes;
       }
 
+      debugPrint('[Restoration] Error: downloadFailed — status ${response.statusCode}');
       throw RestorationException(
         type: RestorationError.restorationFailed,
         message: '이미지 다운로드 실패: ${response.statusCode}',
@@ -396,6 +413,7 @@ class RestorationService {
     } on RestorationException {
       rethrow;
     } on SocketException catch (e) {
+      debugPrint('[Restoration] Error: SocketException — ${e.message}');
       if (e.message.contains('Connection refused')) {
         throw const RestorationException(
           type: RestorationError.connectionRefused,
@@ -408,12 +426,14 @@ class RestorationService {
         message: '이미지 다운로드 중 서버 연결 오류: ${e.message}',
       );
     } on TimeoutException {
+      debugPrint('[Restoration] Error: TimeoutException — download timeout');
       throw const RestorationException(
         type: RestorationError.timeout,
         message: '이미지 다운로드 시간이 초과되었습니다.',
         failureCode: 'E-C08',
       );
     } catch (e) {
+      debugPrint('[Restoration] Error: ${e.runtimeType} — $e');
       throw RestorationException(
         type: RestorationError.serverUnavailable,
         message: '이미지 다운로드 중 오류 발생: $e',
@@ -423,16 +443,26 @@ class RestorationService {
 
   /// Check server health
   Future<bool> checkHealth() async {
+    final stopwatch = Stopwatch()..start();
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/api/health'))
           .timeout(const Duration(seconds: 10));
-      return response.statusCode == 200;
+      stopwatch.stop();
+      final ok = response.statusCode == 200;
+      debugPrint('[Restoration] Health: ${ok ? "OK" : "FAIL(${response.statusCode})"} in ${stopwatch.elapsedMilliseconds}ms');
+      return ok;
     } on SocketException {
+      stopwatch.stop();
+      debugPrint('[Restoration] Health: UNREACHABLE in ${stopwatch.elapsedMilliseconds}ms');
       return false;
     } on TimeoutException {
+      stopwatch.stop();
+      debugPrint('[Restoration] Health: TIMEOUT in ${stopwatch.elapsedMilliseconds}ms');
       return false;
-    } catch (_) {
+    } catch (e) {
+      stopwatch.stop();
+      debugPrint('[Restoration] Health: ERROR(${e.runtimeType}) in ${stopwatch.elapsedMilliseconds}ms');
       return false;
     }
   }

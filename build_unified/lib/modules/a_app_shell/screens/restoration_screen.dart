@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/restoration_provider.dart';
@@ -106,7 +107,12 @@ class _RestorationScreenState extends State<RestorationScreen>
                   )
                 : null,
           ),
-          body: _buildBody(provider),
+          body: Stack(
+            children: [
+              _buildBody(provider),
+              if (kDebugMode) _buildDebugInfoBar(provider),
+            ],
+          ),
         );
       },
     );
@@ -651,6 +657,83 @@ class _RestorationScreenState extends State<RestorationScreen>
       onChanged: onChanged,
       dense: true,
       contentPadding: EdgeInsets.zero,
+    );
+  }
+
+  /// Debug info bar shown at the bottom of the screen in debug mode only.
+  Widget _buildDebugInfoBar(RestorationProvider provider) {
+    final result = provider.result;
+
+    // Determine current image type label
+    String imageTypeLabel;
+    switch (provider.comparisonMode) {
+      case ComparisonMode.original:
+        imageTypeLabel = '원본';
+        break;
+      case ComparisonMode.restored:
+        imageTypeLabel = provider.showBinary ? '이진화' : '그레이스케일';
+        break;
+      case ComparisonMode.comparison:
+        imageTypeLabel = '비교';
+        break;
+      case ComparisonMode.quality:
+        imageTypeLabel = '품질';
+        break;
+    }
+
+    final processingTime = result != null
+        ? '${(result.processingTimeMs / 1000).toStringAsFixed(1)}초'
+        : '-';
+    final qualityScore = result != null
+        ? result.qualityScore.toStringAsFixed(2)
+        : '-';
+
+    // Image dimensions info
+    String dimsInfo = '-';
+    final currentBytes = provider.comparisonMode == ComparisonMode.original
+        ? provider.originalImageBytes
+        : provider.currentRestoredBytes;
+    if (currentBytes != null) {
+      dimsInfo = '${(currentBytes.lengthInBytes / 1024).round()}KB';
+    }
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        height: 30,
+        color: Colors.black.withValues(alpha: 0.7),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            Text(
+              '[$imageTypeLabel]',
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              processingTime,
+              style: const TextStyle(color: Colors.white70, fontSize: 10),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Q:$qualityScore',
+              style: const TextStyle(color: Colors.white70, fontSize: 10),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              dimsInfo,
+              style: const TextStyle(color: Colors.white70, fontSize: 10),
+            ),
+            const Spacer(),
+            Text(
+              provider.serverUrl,
+              style: const TextStyle(color: Colors.white54, fontSize: 9),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
