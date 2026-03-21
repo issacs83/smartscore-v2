@@ -1,0 +1,27 @@
+{
+  "renderer": {
+    "expected_pages": 6,
+    "stave_type": "grand",
+    "has_dynamics": true,
+    "has_articulations": true,
+    "has_repeats": true,
+    "has_tempo_markings": true,
+    "time_signatures": ["2/4"],
+    "key_signatures": ["G major", "D major"]
+  },
+  "restoration": {
+    "min_quality_score": 0.7,
+    "expected_page_detection": true,
+    "expected_skew_correction": true,
+    "target_binary_quality": 0.8
+  },
+  "omr": {
+    "expected_note_count_range": [800, 1200],
+    "expected_rest_count_range": [50, 150],
+    "has_chords": true,
+    "has_grace_notes": false,
+    "has_ties": true,
+    "has_slurs": true,
+    "max_voices_per_staff": 2
+  }
+}
