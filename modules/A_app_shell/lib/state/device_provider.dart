@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import '../../k_external_device/device_manager.dart';
-import '../../k_external_device/device_adapter.dart';
 import '../../k_external_device/device_action.dart';
 
 /// Device provider - wraps Module K

@@ -1,0 +1,11 @@
+{
+    "name": "SmartScore",
+    "short_name": "SmartScore",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FFFDE7",
+    "theme_color": "#1565C0",
+    "description": "AI Sheet Music Score Following & Auto Page Turn",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false
+}

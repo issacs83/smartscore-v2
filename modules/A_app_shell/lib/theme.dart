@@ -33,7 +33,7 @@ class AppTheme {
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: Colors.white,
         selectedItemColor: highlightColor,
-        unselectedItemColor: scoreForeground.withOpacity(0.5),
+        unselectedItemColor: scoreForeground.withValues(alpha: 0.5),
         elevation: 2,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -41,7 +41,7 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 4,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 2,
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -49,7 +49,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(8),
         ),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: Colors.white,
         elevation: 4,
         shape: RoundedRectangleBorder(
@@ -59,7 +59,7 @@ class AppTheme {
       sliderTheme: SliderThemeData(
         activeTrackColor: highlightColor,
         thumbColor: highlightColor,
-        overlayColor: highlightColor.withOpacity(0.4),
+        overlayColor: highlightColor.withValues(alpha: 0.4),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -130,7 +130,7 @@ class AppTheme {
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: const Color(0xFF2A2A2A),
         selectedItemColor: Colors.blue[300],
-        unselectedItemColor: Colors.white.withOpacity(0.5),
+        unselectedItemColor: Colors.white.withValues(alpha: 0.5),
         elevation: 2,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -138,7 +138,7 @@ class AppTheme {
         foregroundColor: Colors.black,
         elevation: 4,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: const Color(0xFF2A2A2A),
         elevation: 2,
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -146,7 +146,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(8),
         ),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: const Color(0xFF2A2A2A),
         elevation: 4,
         shape: RoundedRectangleBorder(
@@ -156,7 +156,7 @@ class AppTheme {
       sliderTheme: SliderThemeData(
         activeTrackColor: Colors.blue[300],
         thumbColor: Colors.blue[300],
-        overlayColor: Colors.blue.withOpacity(0.4),
+        overlayColor: Colors.blue.withValues(alpha: 0.4),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

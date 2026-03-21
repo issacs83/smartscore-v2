@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import '../../b_score_input/score_library.dart';
 import '../../e_music_normalizer/musicxml_parser.dart';
 import '../../k_external_device/device_manager.dart';
-import '../../k_external_device/device_adapter.dart';
 import '../../k_external_device/device_action.dart';
 import '../../k_external_device/keyboard_adapter.dart';
 

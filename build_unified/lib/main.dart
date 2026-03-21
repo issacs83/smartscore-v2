@@ -6,9 +6,10 @@ import 'package:intl/intl.dart';
 import 'modules/a_app_shell/app.dart';
 import 'modules/a_app_shell/state/app_state.dart';
 import 'modules/a_app_shell/state/providers.dart';
-import 'modules/a_app_shell/config.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   // Initialize logging first
   _initializeLogging();
 
@@ -105,6 +106,7 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
     super.initState();
   }
 
+  // ignore: unused_element
   void _showErrorDialog(FlutterErrorDetails details) {
     debugPrint('[SmartScore] Showing error dialog: ${details.exceptionAsString()}');
 

@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'dart:math' as math;
-import 'package:crypto/crypto.dart';
 
 /// Validation error for Score.validate()
 class ValidationError {
@@ -273,19 +271,29 @@ enum InstrumentType {
   factory InstrumentType.fromName(String name) {
     final normalized = name.toLowerCase().trim();
 
+    // Voice (check before instruments to catch "bass voice" before "bass")
+    if (normalized.contains('soprano')) return InstrumentType.soprano;
+    if (normalized.contains('alto') && !normalized.contains('alto sax')) return InstrumentType.alto;
+    if (normalized.contains('tenor') && !normalized.contains('tenor sax')) return InstrumentType.tenor;
+    if (normalized.contains('bass voice') || normalized.contains('baritone')) {
+      return InstrumentType.bassVoice;
+    }
+    if (normalized.contains('voice') || normalized.contains('vocal')) {
+      return InstrumentType.voice;
+    }
+
     // String instruments
     if (normalized.contains('violin')) return InstrumentType.violin;
     if (normalized.contains('viola')) return InstrumentType.viola;
     if (normalized.contains('cello')) return InstrumentType.cello;
-    if (normalized.contains('bass') && !normalized.contains('trombone')) {
-      return InstrumentType.bass;
-    }
+    if (normalized.contains('double bass') || normalized.contains('contrabass') ||
+        normalized.contains('string bass')) return InstrumentType.bass;
 
-    // Woodwinds
+    // Woodwinds (check before generic "bass" to catch "bass clarinet", "bassoon")
+    if (normalized.contains('bassoon')) return InstrumentType.bassoon;
     if (normalized.contains('flute')) return InstrumentType.flute;
     if (normalized.contains('oboe')) return InstrumentType.oboe;
     if (normalized.contains('clarinet')) return InstrumentType.clarinet;
-    if (normalized.contains('bassoon')) return InstrumentType.bassoon;
 
     // Brass
     if (normalized.contains('horn')) return InstrumentType.horn;
@@ -303,16 +311,8 @@ enum InstrumentType {
     if (normalized.contains('xylophone')) return InstrumentType.xylophone;
     if (normalized.contains('percussion')) return InstrumentType.percussion;
 
-    // Voice
-    if (normalized.contains('soprano')) return InstrumentType.soprano;
-    if (normalized.contains('alto')) return InstrumentType.alto;
-    if (normalized.contains('tenor')) return InstrumentType.tenor;
-    if (normalized == 'bass' || normalized.contains('bass voice')) {
-      return InstrumentType.bassVoice;
-    }
-    if (normalized.contains('voice') || normalized.contains('vocal')) {
-      return InstrumentType.voice;
-    }
+    // Generic bass (only if no other match — standalone "bass" = string bass)
+    if (normalized == 'bass') return InstrumentType.bass;
 
     // Plucked
     if (normalized.contains('guitar')) return InstrumentType.guitar;

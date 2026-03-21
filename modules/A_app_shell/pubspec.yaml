@@ -1,11 +1,11 @@
-name: smartscore
-description: "Smart music score viewer with device integration"
+name: smartscore_build
+description: "Unified SmartScore v2 Flutter project merging all Stage 1 modules (A, B, E, F, K)"
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.2.0 <4.0.0'
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -36,13 +36,12 @@ dependencies:
   # Parsing
   xml: ^6.0.0
 
-  # Utilities
-  uuid: ^3.0.0
-  crypto: ^3.0.0
+  # HTTP
+  http: ^1.0.0
 
-  # Module dependencies (local)
-  # These would reference the other modules in a real setup
-  # For now, we assume they're available as pub packages or local paths
+  # Utilities
+  uuid: ^4.0.0
+  crypto: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -54,35 +53,7 @@ dev_dependencies:
   mockito: ^5.0.0
   integration_test:
     sdk: flutter
+  test: ^1.24.0
 
 flutter:
   uses-material-design: true
-
-  # Assets
-  assets:
-    - assets/
-    - assets/fonts/
-    - assets/images/
-
-  # Fonts
-  fonts:
-    - family: Courier
-      fonts:
-        - asset: assets/fonts/courier.ttf
-
-# Build configuration
-build:
-  android:
-    # App signing
-    release:
-      signingConfig: signingConfigs.release
-
-  ios:
-    # Code signing
-    certificateId: "iPhone Developer"
-
-# Feature flags for build variants
-dart_define:
-  FLAVOR: dev
-  DEBUG_MODE: true
-  DEMO_MODE: false

@@ -286,10 +286,47 @@ if omr_input["metadata"]["quality_score"] < 0.6:
 
 ---
 
+## Flutter Bridge Integration (Module A ↔ Module C)
+
+이 섹션은 Flutter 앱에서 Module C를 호출하는 방법을 정의합니다.
+상세 사양은 `docs/module_c_flutter_bridge_spec.md`를 참조하세요.
+
+### 호출 방식
+
+1차 구현에서는 HTTP Server 방식(Option A)을 사용합니다:
+
+- **서버**: `modules/C_score_image_restoration/server.py` (port 8888)
+- **엔드포인트**: `POST /api/restore` (multipart/form-data)
+- **응답**: JSON (스키마: `docs/module_c_output_schema.json`)
+
+### Flutter 측 데이터 흐름
+
+```
+CaptureScreen → Module B(originalImage 저장) → Module C(HTTP POST)
+  → 결과 수신 → Module B(restoredImage 저장) → ComparisonView(비교 표시)
+```
+
+### Module B VersionType 매핑
+
+| Module C 출력 | VersionType | 설명 |
+|---------------|-------------|------|
+| 원본 이미지 | `VersionType.originalImage` | 촬영/선택한 원본 |
+| binary_final.png | `VersionType.restoredImage` | 이진화된 복원 결과 |
+
+### 관련 문서
+
+- `docs/module_c_flutter_bridge_spec.md` — 전체 브릿지 사양서 (한국어)
+- `docs/module_c_output_schema.json` — JSON Schema (Draft 7)
+- `modules/C_score_image_restoration/server.py` — HTTP 서버 구현
+- `modules/C_score_image_restoration/restore.py` — CLI 구현
+
+---
+
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2026-03-21 | Flutter Bridge Integration 섹션 추가 |
 | 1.0 | 2026-03-21 | Initial contract specification |
 
 ---

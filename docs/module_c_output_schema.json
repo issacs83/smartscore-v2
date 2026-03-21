@@ -1,0 +1,344 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://smartscore.juntech.dev/schemas/module_c_output.json",
+  "title": "Module C 이미지 복원 결과 스키마",
+  "description": "SmartScore v2 Module C (Score Image Restoration)의 복원 결과 JSON 스키마. Flutter 앱에서 이 구조로 결과를 수신하고 파싱합니다.",
+  "type": "object",
+  "required": [
+    "success",
+    "quality_score",
+    "quality_components",
+    "skew_angle",
+    "page_detected",
+    "processing_time_ms",
+    "step_times_ms",
+    "output_images"
+  ],
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "description": "복원 성공 여부. false일 경우 failure_reason과 failure_code가 설정됨."
+    },
+    "quality_score": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "복합 품질 점수. 6개 컴포넌트의 가중 평균. 0.0=최저, 1.0=최고. 0.3 미만이면 OMR 처리 비권장."
+    },
+    "quality_components": {
+      "type": "object",
+      "description": "개별 품질 컴포넌트 점수. 각 값은 0.0-1.0 범위.",
+      "required": [
+        "contrast_ratio",
+        "sharpness",
+        "line_straightness",
+        "noise_level",
+        "coverage",
+        "binarization_quality"
+      ],
+      "properties": {
+        "contrast_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "전경/배경 간 강도 차이. 가중치: 0.25. 높을수록 이진화에 유리."
+        },
+        "sharpness": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Laplacian 분산 기반 선명도. 가중치: 0.20. 높을수록 세선(beam, stem) 검출에 유리."
+        },
+        "line_straightness": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Hough 선 각도 분산 기반 직선성. 가중치: 0.20. 높을수록 오선 검출에 유리."
+        },
+        "noise_level": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "고주파 노이즈 에너지 역수. 가중치: 0.15. 높을수록 노이즈가 적음."
+        },
+        "coverage": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "전경 픽셀 비율 점수. 가중치: 0.10. 15-50%가 최적 범위."
+        },
+        "binarization_quality": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Otsu/Adaptive 대비 이진화 일치도. 가중치: 0.10. 높을수록 이진화 결과 신뢰도 높음."
+        }
+      },
+      "additionalProperties": false
+    },
+    "skew_angle": {
+      "type": "number",
+      "minimum": -45.0,
+      "maximum": 45.0,
+      "description": "감지된 기울기 각도(도). 양수=시계방향. 보정 후에는 이미지가 수평이므로 이 값은 '보정 전' 기울기."
+    },
+    "page_detected": {
+      "type": "boolean",
+      "description": "페이지 경계 감지 성공 여부. false이면 원근 보정이 건너뛰어짐."
+    },
+    "processing_time_ms": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "전체 파이프라인 처리 시간(밀리초). 일반적으로 1000-2000ms."
+    },
+    "step_times_ms": {
+      "type": "object",
+      "description": "각 파이프라인 단계별 처리 시간(밀리초).",
+      "properties": {
+        "detect_page_bounds": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "페이지 경계 감지 시간"
+        },
+        "correct_perspective": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "원근 보정 시간. 페이지 미감지 시 생략."
+        },
+        "detect_skew": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "기울기 감지 시간"
+        },
+        "correct_skew": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "기울기 보정 시간. 옵션 비활성화 시 생략."
+        },
+        "convert_grayscale": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "그레이스케일 변환 시간"
+        },
+        "remove_shadows": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "그림자 제거 시간. 옵션 비활성화 시 생략."
+        },
+        "enhance_contrast": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "대비 향상 시간. 옵션 비활성화 시 생략."
+        },
+        "binarize": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "이진화 시간. Sauvola 방식이 가장 오래 걸림 (~500-1000ms)."
+        },
+        "compute_quality": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "품질 점수 계산 시간"
+        }
+      },
+      "additionalProperties": true
+    },
+    "output_images": {
+      "type": "object",
+      "description": "최종 출력 이미지 경로 (HTTP 서버 모드: API 경로, CLI 모드: 파일 경로).",
+      "required": ["binary", "grayscale"],
+      "properties": {
+        "binary": {
+          "type": "string",
+          "description": "이진화된 최종 이미지 경로. uint8, (H,W), 값: {0, 255}. 전경=255, 배경=0.",
+          "examples": ["/api/images/binary_final.png", "./output/binary_final.png"]
+        },
+        "grayscale": {
+          "type": "string",
+          "description": "기하 보정된 그레이스케일 이미지 경로. uint8, (H,W), 값: [0, 255].",
+          "examples": ["/api/images/grayscale_final.png", "./output/grayscale_final.png"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "intermediate_images": {
+      "type": ["object", "null"],
+      "description": "중간 처리 단계 이미지 경로. save_intermediates=true일 때만 포함. 각 단계가 실행되지 않은 경우 해당 키는 생략됨.",
+      "properties": {
+        "bounds_visualization": {
+          "type": "string",
+          "description": "페이지 경계 감지 시각화. 녹색 사각형으로 경계 표시."
+        },
+        "after_perspective": {
+          "type": "string",
+          "description": "원근 보정 후 이미지. 페이지 미감지 시 생략."
+        },
+        "after_deskew": {
+          "type": "string",
+          "description": "기울기 보정 후 이미지."
+        },
+        "grayscale": {
+          "type": "string",
+          "description": "그레이스케일 변환 결과."
+        },
+        "after_shadow_removal": {
+          "type": "string",
+          "description": "그림자 제거 후 이미지."
+        },
+        "after_contrast": {
+          "type": "string",
+          "description": "대비 향상 후 이미지."
+        },
+        "binary": {
+          "type": "string",
+          "description": "이진화 결과 (최종 이진 이미지와 동일)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "failure_reason": {
+      "type": ["string", "null"],
+      "description": "실패 시 에러 코드 + 설명. 성공 시 null. 형식: 'E-Cxx: 설명'.",
+      "examples": [
+        null,
+        "E-C01: IMAGE_TOO_SMALL",
+        "E-C02: Image too small (<100x100)",
+        "E-C08: PROCESSING_TIMEOUT",
+        "E-C99: Unexpected error message"
+      ]
+    },
+    "failure_code": {
+      "type": ["string", "null"],
+      "description": "실패 시 에러 코드만 추출. 성공 시 null. Flutter에서 switch/case로 처리 분기에 사용.",
+      "enum": [
+        null,
+        "E-C01",
+        "E-C02",
+        "E-C03",
+        "E-C04",
+        "E-C05",
+        "E-C06",
+        "E-C07",
+        "E-C08",
+        "E-C99"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "처리 완료 시점 ISO 8601 타임스탬프."
+    },
+    "input_image": {
+      "type": "string",
+      "description": "입력 이미지 파일명."
+    },
+    "input_shape": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "minItems": 2,
+      "maxItems": 3,
+      "description": "입력 이미지 shape [H, W] 또는 [H, W, C]."
+    },
+    "output_shape": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "출력 이미지 shape [H, W]."
+    },
+    "options": {
+      "type": "object",
+      "description": "사용된 복원 옵션.",
+      "properties": {
+        "perspective_correction": {
+          "type": "boolean",
+          "description": "원근 보정 활성화 여부"
+        },
+        "deskew": {
+          "type": "boolean",
+          "description": "기울기 보정 활성화 여부"
+        },
+        "shadow_removal": {
+          "type": "boolean",
+          "description": "그림자 제거 활성화 여부"
+        },
+        "contrast_enhancement": {
+          "type": "boolean",
+          "description": "대비 향상 활성화 여부"
+        },
+        "binarization_method": {
+          "type": "string",
+          "enum": ["sauvola", "otsu", "adaptive"],
+          "description": "이진화 방식"
+        },
+        "sauvola_k": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 0.5,
+          "description": "Sauvola K 파라미터 (sauvola 방식일 때만 유효)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "success": true,
+      "quality_score": 0.823,
+      "quality_components": {
+        "contrast_ratio": 0.95,
+        "sharpness": 0.78,
+        "line_straightness": 0.85,
+        "noise_level": 0.72,
+        "coverage": 0.88,
+        "binarization_quality": 0.91
+      },
+      "skew_angle": 1.35,
+      "page_detected": true,
+      "processing_time_ms": 1245.67,
+      "step_times_ms": {
+        "detect_page_bounds": 45.2,
+        "correct_perspective": 23.1,
+        "detect_skew": 67.8,
+        "correct_skew": 18.3,
+        "convert_grayscale": 5.1,
+        "remove_shadows": 89.4,
+        "enhance_contrast": 12.6,
+        "binarize": 965.2,
+        "compute_quality": 18.9
+      },
+      "output_images": {
+        "binary": "/api/images/binary_final.png",
+        "grayscale": "/api/images/grayscale_final.png"
+      },
+      "intermediate_images": {
+        "bounds_visualization": "/api/images/page_detected.png",
+        "after_perspective": "/api/images/perspective.png",
+        "after_deskew": "/api/images/deskewed.png",
+        "grayscale": "/api/images/grayscale.png",
+        "after_shadow_removal": "/api/images/shadow_removed.png",
+        "after_contrast": "/api/images/contrast.png",
+        "binary": "/api/images/binary.png"
+      },
+      "failure_reason": null,
+      "failure_code": null
+    },
+    {
+      "success": false,
+      "quality_score": 0.0,
+      "quality_components": {},
+      "skew_angle": 0.0,
+      "page_detected": false,
+      "processing_time_ms": 0.0,
+      "step_times_ms": {},
+      "output_images": {
+        "binary": "",
+        "grayscale": ""
+      },
+      "intermediate_images": null,
+      "failure_reason": "E-C01: IMAGE_TOO_SMALL",
+      "failure_code": "E-C01"
+    }
+  ]
+}
