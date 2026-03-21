@@ -120,7 +120,7 @@ class _RestorationScreenState extends State<RestorationScreen>
         );
 
       case RestorationState.loading:
-        return _buildLoadingView();
+        return _buildLoadingView(provider);
 
       case RestorationState.error:
         return _buildErrorView(provider);
@@ -130,36 +130,64 @@ class _RestorationScreenState extends State<RestorationScreen>
     }
   }
 
-  Widget _buildLoadingView() {
-    return const Center(
+  Widget _buildLoadingView(RestorationProvider provider) {
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
+          const SizedBox(
             width: 64,
             height: 64,
             child: CircularProgressIndicator(strokeWidth: 4),
           ),
-          SizedBox(height: 24),
-          Text(
-            '이미지를 복원하고 있습니다...',
+          const SizedBox(height: 24),
+          const Text(
+            '이미지 복원 중... (약 5-15초)',
             style: TextStyle(fontSize: 16),
           ),
-          SizedBox(height: 8),
-          Text(
+          const SizedBox(height: 8),
+          const Text(
             '잠시만 기다려주세요',
             style: TextStyle(fontSize: 14, color: Colors.grey),
           ),
+          // Show file size warning if image is large
+          if (provider.imageSizeWarning && provider.imageSizeInfo != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning_amber, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      '이미지 크기가 큽니다 (${provider.imageSizeInfo}MB). '
+                      '처리 시간이 길어질 수 있습니다.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildErrorView(RestorationProvider provider) {
-    final isServerError =
-        provider.errorCode == null || provider.errorCode == 'E-C99';
-    final isSizeError = provider.errorCode == 'E-C01' ||
-        provider.errorCode == 'E-C02';
+    final errorIcon = _getErrorIcon(provider.errorCode);
+    final errorColor = _getErrorColor(provider.errorCode);
 
     return Center(
       child: Padding(
@@ -168,9 +196,9 @@ class _RestorationScreenState extends State<RestorationScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              isSizeError ? Icons.photo_size_select_large : Icons.error_outline,
+              errorIcon,
               size: 64,
-              color: Colors.red,
+              color: errorColor,
             ),
             const SizedBox(height: 16),
             Text(
@@ -184,26 +212,69 @@ class _RestorationScreenState extends State<RestorationScreen>
               style: const TextStyle(color: Colors.grey),
               textAlign: TextAlign.center,
             ),
+            if (provider.errorCode != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '오류 코드: ${provider.errorCode}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade400,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('돌아가기'),
+            // Prominent retry button
+            SizedBox(
+              width: 200,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: () => provider.retry(),
+                icon: const Icon(Icons.refresh, size: 20),
+                label: const Text(
+                  '다시 시도',
+                  style: TextStyle(fontSize: 16),
                 ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: () => provider.retry(),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('다시 시도'),
-                ),
-              ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('돌아가기'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  IconData _getErrorIcon(String? code) {
+    switch (code) {
+      case 'E-C01':
+      case 'E-C02':
+        return Icons.photo_size_select_large;
+      case 'E-C03':
+      case 'E-C04':
+        return Icons.broken_image;
+      case 'E-C08':
+        return Icons.timer_off;
+      case 'E-C10':
+      case 'E-C99':
+        return Icons.cloud_off;
+      default:
+        return Icons.error_outline;
+    }
+  }
+
+  Color _getErrorColor(String? code) {
+    switch (code) {
+      case 'E-C08':
+        return Colors.orange;
+      case 'E-C10':
+      case 'E-C99':
+        return Colors.blue.shade700;
+      default:
+        return Colors.red;
+    }
   }
 
   String _getErrorTitle(String? code) {
@@ -212,8 +283,22 @@ class _RestorationScreenState extends State<RestorationScreen>
         return '이미지가 너무 작습니다';
       case 'E-C02':
         return '이미지가 너무 큽니다';
+      case 'E-C03':
+        return '지원하지 않는 형식';
+      case 'E-C04':
+        return '손상된 파일';
+      case 'E-C05':
+        return '페이지 감지 실패';
+      case 'E-C06':
+        return '이진화 실패';
+      case 'E-C07':
+        return '메모리 부족';
       case 'E-C08':
         return '처리 시간 초과';
+      case 'E-C10':
+        return '서버 연결 거부';
+      case 'E-C99':
+        return '서버에 연결할 수 없습니다';
       default:
         return '복원 실패';
     }

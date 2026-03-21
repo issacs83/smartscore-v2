@@ -32,6 +32,8 @@ class RestorationProvider extends ChangeNotifier {
   String? _errorMessage;
   String? _errorCode;
   bool _showBinary = true;
+  bool _imageSizeWarning = false;
+  String? _imageSizeInfo;
 
   RestorationProvider({RestorationService? service})
       : _service = service ?? RestorationService();
@@ -49,6 +51,12 @@ class RestorationProvider extends ChangeNotifier {
   bool get showBinary => _showBinary;
   bool get isLoading => _state == RestorationState.loading;
   bool get hasResult => _state == RestorationState.success && _result != null;
+
+  /// Whether the image size exceeds the warning threshold (>20MB)
+  bool get imageSizeWarning => _imageSizeWarning;
+
+  /// Human-readable image size info (e.g. "25.3MB")
+  String? get imageSizeInfo => _imageSizeInfo;
 
   /// Get the currently displayed restored image bytes
   Uint8List? get currentRestoredBytes =>
@@ -78,6 +86,34 @@ class RestorationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Get Korean error message based on error code
+  static String getKoreanErrorMessage(String? errorCode, String? fallback) {
+    switch (errorCode) {
+      case 'E-C01':
+        return '이미지가 너무 작습니다. 최소 200x200 픽셀 이상이어야 합니다.';
+      case 'E-C02':
+        return '이미지가 너무 큽니다 (최대 50MB)';
+      case 'E-C03':
+        return '지원하지 않는 이미지 형식입니다.';
+      case 'E-C04':
+        return '이미지 파일이 손상되었습니다.';
+      case 'E-C05':
+        return '페이지 경계를 감지할 수 없습니다.';
+      case 'E-C06':
+        return '이진화 처리에 실패했습니다.';
+      case 'E-C07':
+        return '메모리가 부족합니다. 더 작은 이미지를 사용해주세요.';
+      case 'E-C08':
+        return '처리 시간 초과';
+      case 'E-C10':
+        return '서버 연결이 거부되었습니다. 서버가 실행 중인지 확인해주세요.';
+      case 'E-C99':
+        return '서버에 연결할 수 없습니다';
+      default:
+        return fallback ?? '알 수 없는 오류가 발생했습니다.';
+    }
+  }
+
   /// Start restoration process
   Future<void> startRestoration(
     Uint8List imageBytes,
@@ -90,6 +126,21 @@ class RestorationProvider extends ChangeNotifier {
     _result = null;
     _binaryImageBytes = null;
     _grayscaleImageBytes = null;
+
+    // Check image size and set warning flag
+    _imageSizeInfo = _service.getImageSizeMB(imageBytes);
+    _imageSizeWarning = _service.isImageSizeLarge(imageBytes);
+
+    // Validate image size (reject >50MB)
+    final sizeError = _service.validateImageSize(imageBytes);
+    if (sizeError != null) {
+      _state = RestorationState.error;
+      _errorMessage = sizeError.userMessage;
+      _errorCode = sizeError.failureCode;
+      notifyListeners();
+      return;
+    }
+
     notifyListeners();
 
     try {
@@ -101,8 +152,11 @@ class RestorationProvider extends ChangeNotifier {
 
       if (!result.success) {
         _state = RestorationState.error;
-        _errorMessage = result.failureReason ?? '복원에 실패했습니다.';
         _errorCode = result.failureCode;
+        _errorMessage = getKoreanErrorMessage(
+          result.failureCode,
+          result.failureReason ?? '복원에 실패했습니다.',
+        );
         _result = result;
         notifyListeners();
         return;
@@ -122,8 +176,8 @@ class RestorationProvider extends ChangeNotifier {
       notifyListeners();
     } on RestorationException catch (e) {
       _state = RestorationState.error;
-      _errorMessage = e.message;
       _errorCode = e.failureCode;
+      _errorMessage = e.userMessage;
       debugPrint('[RestorationProvider] Restoration error: $e');
       notifyListeners();
     } catch (e) {
@@ -184,6 +238,8 @@ class RestorationProvider extends ChangeNotifier {
     _errorMessage = null;
     _errorCode = null;
     _showBinary = true;
+    _imageSizeWarning = false;
+    _imageSizeInfo = null;
     notifyListeners();
   }
 
@@ -200,6 +256,8 @@ class RestorationProvider extends ChangeNotifier {
       'qualityScore': _result?.qualityScore,
       'errorMessage': _errorMessage,
       'errorCode': _errorCode,
+      'imageSizeWarning': _imageSizeWarning,
+      'imageSizeInfo': _imageSizeInfo,
     };
   }
 

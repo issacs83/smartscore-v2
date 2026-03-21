@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -6,8 +8,10 @@ import 'package:http/http.dart' as http;
 /// Error types for restoration operations
 enum RestorationError {
   serverUnavailable,
+  connectionRefused,
   uploadFailed,
   invalidImage,
+  imageTooLarge,
   restorationFailed,
   timeout,
 }
@@ -24,9 +28,35 @@ class RestorationException implements Exception {
     this.failureCode,
   });
 
+  /// Korean user-friendly error message based on error type
+  String get userMessage {
+    switch (type) {
+      case RestorationError.serverUnavailable:
+        return '서버에 연결할 수 없습니다';
+      case RestorationError.connectionRefused:
+        return '서버 연결이 거부되었습니다. 서버가 실행 중인지 확인해주세요.';
+      case RestorationError.uploadFailed:
+        return '이미지 업로드에 실패했습니다';
+      case RestorationError.invalidImage:
+        return '유효하지 않은 이미지입니다';
+      case RestorationError.imageTooLarge:
+        return '이미지가 너무 큽니다 (최대 50MB)';
+      case RestorationError.restorationFailed:
+        return '이미지 복원에 실패했습니다';
+      case RestorationError.timeout:
+        return '처리 시간 초과';
+    }
+  }
+
   @override
   String toString() => 'RestorationException($type): $message';
 }
+
+/// Maximum allowed image size in bytes (50MB)
+const int maxImageSizeBytes = 50 * 1024 * 1024;
+
+/// Warning threshold for image size in bytes (20MB)
+const int warnImageSizeBytes = 20 * 1024 * 1024;
 
 /// Options for image restoration
 class RestorationOptions {
@@ -203,14 +233,42 @@ class RestorationResult {
 class RestorationService {
   final String baseUrl;
   final http.Client _client;
-  final Duration _timeout;
+  final Duration _restoreTimeout;
+  final Duration _downloadTimeout;
 
   RestorationService({
     this.baseUrl = 'http://localhost:8888',
     http.Client? client,
-    Duration? timeout,
+    Duration? restoreTimeout,
+    Duration? downloadTimeout,
   })  : _client = client ?? http.Client(),
-        _timeout = timeout ?? const Duration(seconds: 60);
+        _restoreTimeout = restoreTimeout ?? const Duration(seconds: 30),
+        _downloadTimeout = downloadTimeout ?? const Duration(seconds: 10);
+
+  /// Validate image size before upload.
+  /// Returns null if valid, or a RestorationException if invalid.
+  RestorationException? validateImageSize(Uint8List imageBytes) {
+    if (imageBytes.lengthInBytes > maxImageSizeBytes) {
+      final sizeMB =
+          (imageBytes.lengthInBytes / (1024 * 1024)).toStringAsFixed(1);
+      return RestorationException(
+        type: RestorationError.imageTooLarge,
+        message: '이미지가 너무 큽니다 (${sizeMB}MB). 최대 50MB까지 지원합니다.',
+        failureCode: 'E-C02',
+      );
+    }
+    return null;
+  }
+
+  /// Check if image size exceeds warning threshold (20MB)
+  bool isImageSizeLarge(Uint8List imageBytes) {
+    return imageBytes.lengthInBytes > warnImageSizeBytes;
+  }
+
+  /// Get image size in MB as a formatted string
+  String getImageSizeMB(Uint8List imageBytes) {
+    return (imageBytes.lengthInBytes / (1024 * 1024)).toStringAsFixed(1);
+  }
 
   /// Restore an image via Module C server
   Future<RestorationResult> restoreImage(
@@ -218,6 +276,12 @@ class RestorationService {
     String fileName, {
     RestorationOptions? options,
   }) async {
+    // Validate image size before upload
+    final sizeError = validateImageSize(imageBytes);
+    if (sizeError != null) {
+      throw sizeError;
+    }
+
     final opts = options ?? const RestorationOptions();
 
     final uri = Uri.parse(
@@ -237,7 +301,8 @@ class RestorationService {
         filename: fileName,
       ));
 
-      final streamedResponse = await request.send().timeout(_timeout);
+      final streamedResponse =
+          await request.send().timeout(_restoreTimeout);
       final body = await streamedResponse.stream.bytesToString();
 
       if (streamedResponse.statusCode == 200) {
@@ -264,6 +329,27 @@ class RestorationService {
       }
     } on RestorationException {
       rethrow;
+    } on SocketException catch (e) {
+      if (e.osError?.errorCode == 111 ||
+          e.osError?.errorCode == 10061 ||
+          e.message.contains('Connection refused')) {
+        throw const RestorationException(
+          type: RestorationError.connectionRefused,
+          message: '서버 연결이 거부되었습니다. 복원 서버가 실행 중인지 확인해주세요.',
+          failureCode: 'E-C10',
+        );
+      }
+      throw RestorationException(
+        type: RestorationError.serverUnavailable,
+        message: '서버에 연결할 수 없습니다: ${e.message}',
+        failureCode: 'E-C99',
+      );
+    } on TimeoutException {
+      throw const RestorationException(
+        type: RestorationError.timeout,
+        message: '처리 시간이 초과되었습니다. 다시 시도해주세요.',
+        failureCode: 'E-C08',
+      );
     } catch (e) {
       if (e.toString().contains('TimeoutException')) {
         throw const RestorationException(
@@ -272,9 +358,18 @@ class RestorationService {
           failureCode: 'E-C08',
         );
       }
+      if (e.toString().contains('Connection refused') ||
+          e.toString().contains('SocketException')) {
+        throw const RestorationException(
+          type: RestorationError.connectionRefused,
+          message: '서버 연결이 거부되었습니다. 복원 서버가 실행 중인지 확인해주세요.',
+          failureCode: 'E-C10',
+        );
+      }
       throw RestorationException(
         type: RestorationError.serverUnavailable,
         message: '복원 서버에 연결할 수 없습니다: $e',
+        failureCode: 'E-C99',
       );
     }
   }
@@ -288,7 +383,7 @@ class RestorationService {
     try {
       final response = await _client
           .get(Uri.parse(url))
-          .timeout(_timeout);
+          .timeout(_downloadTimeout);
 
       if (response.statusCode == 200) {
         return response.bodyBytes;
@@ -298,8 +393,27 @@ class RestorationService {
         type: RestorationError.restorationFailed,
         message: '이미지 다운로드 실패: ${response.statusCode}',
       );
+    } on RestorationException {
+      rethrow;
+    } on SocketException catch (e) {
+      if (e.message.contains('Connection refused')) {
+        throw const RestorationException(
+          type: RestorationError.connectionRefused,
+          message: '서버 연결이 거부되었습니다. 서버가 실행 중인지 확인해주세요.',
+          failureCode: 'E-C10',
+        );
+      }
+      throw RestorationException(
+        type: RestorationError.serverUnavailable,
+        message: '이미지 다운로드 중 서버 연결 오류: ${e.message}',
+      );
+    } on TimeoutException {
+      throw const RestorationException(
+        type: RestorationError.timeout,
+        message: '이미지 다운로드 시간이 초과되었습니다.',
+        failureCode: 'E-C08',
+      );
     } catch (e) {
-      if (e is RestorationException) rethrow;
       throw RestorationException(
         type: RestorationError.serverUnavailable,
         message: '이미지 다운로드 중 오류 발생: $e',
@@ -312,8 +426,12 @@ class RestorationService {
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/api/health'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
+    } on SocketException {
+      return false;
+    } on TimeoutException {
+      return false;
     } catch (_) {
       return false;
     }
