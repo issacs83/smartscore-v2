@@ -1,0 +1,57 @@
+name: e_music_normalizer
+description: SmartScore Music Normalizer - Core data models, MusicXML parser, and score validator
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  xml: ^6.0.0
+  crypto: ^3.0.0
+
+dev_dependencies:
+  test: ^1.24.0
+  lints: ^2.0.0
+
+# Module metadata for SmartScore
+smartscore:
+  module: E
+  title: Music Normalizer
+  stage: Stage 1
+  schema_version: 1.0
+  dependencies:
+    - module_b  # Database (imports ScoreEntry)
+    - module_f  # Rendering (consumes Score JSON)
+    - module_c  # Comparison (compares Score JSON)
+
+features:
+  # Score JSON data models
+  - immutable_models
+  - json_serialization
+  - copyWith_mutable_state
+
+  # MusicXML parsing
+  - musicxml_score_partwise
+  - note_rest_chord_parsing
+  - dynamics_articulations
+  - key_time_signature_clef
+  - tempo_rehearsal_marks
+  - repeats_slurs_ties
+
+  # Pitch computation
+  - midi_number_calculation
+  - frequency_computation_hz
+  - instrument_type_detection
+
+  # Validation
+  - structure_validation
+  - pitch_range_checking
+  - measure_duration_consistency
+  - chord_validity
+  - time_signature_continuity
+
+standards:
+  - SCORE_JSON_SCHEMA v1.0
+  - MusicXML 3.1 (score-partwise format)
+  - RFC 4122 (UUID v4)
+  - ISO 8601 (timestamps)

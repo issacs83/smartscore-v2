@@ -1,0 +1,15 @@
+name: smartscore_external_device
+description: Module K - External Device Integration for SmartScore. Manages Bluetooth devices, keyboard input, and MIDI controllers with priority-based conflict resolution.
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  test: ^1.24.0

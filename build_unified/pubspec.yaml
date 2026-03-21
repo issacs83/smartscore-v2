@@ -1,0 +1,56 @@
+name: smartscore_build
+description: "Unified SmartScore v2 Flutter project merging all Stage 1 modules (A, B, E, F, K)"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.0.0
+
+  # Navigation
+  go_router: ^10.0.0
+
+  # Internationalization
+  intl: ^0.19.0
+
+  # UI components
+  material_design_icons_flutter: ^7.0.0
+  google_fonts: ^5.0.0
+
+  # File handling
+  file_picker: ^5.0.0
+  image_picker: ^0.8.0
+
+  # Storage
+  sqflite: ^2.2.0
+  path: ^1.8.0
+  path_provider: ^2.0.0
+
+  # Parsing
+  xml: ^6.0.0
+
+  # Utilities
+  uuid: ^4.0.0
+  crypto: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^2.0.0
+
+  # Testing
+  mockito: ^5.0.0
+  integration_test:
+    sdk: flutter
+  test: ^1.24.0
+
+flutter:
+  uses-material-design: true

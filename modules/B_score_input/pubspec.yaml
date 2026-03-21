@@ -1,0 +1,16 @@
+name: smartscore_b_score_input
+description: Module B for SmartScore v2 - Score input, library management, and version control
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  uuid: ^4.0.0
+  crypto: ^3.0.0
+  xml: ^6.0.0
+  intl: ^0.19.0
+
+dev_dependencies:
+  test: ^1.24.0
+  lints: ^3.0.0
