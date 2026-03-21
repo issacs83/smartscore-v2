@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "samples": [
+    {
+      "id": "beethoven_op14_no2_mov1",
+      "path": "beethoven_op14_no2",
+      "composer": "Beethoven",
+      "title": "Piano Sonata No. 10, Op. 14 No. 2 — I. Allegro",
+      "instrument": "piano",
+      "pages": 6,
+      "tests": ["renderer", "restoration", "omr"],
+      "status": "active",
+      "added_date": "2026-03-21"
+    }
+  ]
+}

@@ -11,8 +11,8 @@ const BuildFlavor buildFlavor = String.fromEnvironment('FLAVOR') == 'dev'
     ? BuildFlavor.dev
     : BuildFlavor.prod;
 
-/// Whether to enable debug mode (only in dev flavor)
-const bool enableDebugMode = buildFlavor == BuildFlavor.dev;
+/// Whether to enable debug mode
+const bool enableDebugMode = true; // Always enabled during development
 
 /// Whether to enable comparison feature (Module C)
 const bool enableComparison = true;

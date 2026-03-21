@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../state/score_library_provider.dart';
 import '../state/score_renderer_provider.dart';
 import '../state/device_provider.dart';
@@ -17,11 +19,13 @@ class DebugScreen extends StatefulWidget {
 class _DebugScreenState extends State<DebugScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  bool _isSampleLoading = false;
+  bool _sampleLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -44,6 +48,7 @@ class _DebugScreenState extends State<DebugScreen>
             Tab(text: 'Modules'),
             Tab(text: 'JSON'),
             Tab(text: 'Performance'),
+            Tab(text: 'Samples'),
           ],
         ),
       ),
@@ -55,8 +60,154 @@ class _DebugScreenState extends State<DebugScreen>
           _buildModulesTab(),
           _buildJsonTab(),
           _buildPerformanceTab(),
+          _buildSamplesTab(),
         ],
       ),
+    );
+  }
+
+  Future<void> _loadBeethovenSample(ScoreLibraryProvider library) async {
+    setState(() { _isSampleLoading = true; });
+
+    try {
+      // Load page images
+      int loadedPages = 0;
+      for (int i = 1; i <= 6; i++) {
+        final pageName = 'page_${i.toString().padLeft(3, '0')}.png';
+        final bytes = await rootBundle.load(
+          'test_assets/beethoven_op14_no2/original/$pageName');
+        final imageBytes = bytes.buffer.asUint8List();
+
+        final result = await library.moduleB?.importImage(
+          imageBytes,
+          'beethoven_op14_no2_$pageName',
+        );
+        if (result?.isSuccess ?? false) loadedPages++;
+      }
+
+      // Load MusicXML
+      try {
+        final xmlContent = await rootBundle.loadString(
+          'test_assets/beethoven_op14_no2/original/sample_first_4_measures.musicxml');
+        await library.moduleB?.importMusicXml(
+          xmlContent,
+          fileName: 'beethoven_op14_no2.musicxml',
+        );
+      } catch (_) {
+        // MusicXML import is optional
+      }
+
+      await library.loadLibrary();
+
+      setState(() { _isSampleLoading = false; _sampleLoaded = true; });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Beethoven 샘플 로드 완료 ($loadedPages 페이지)'),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() { _isSampleLoading = false; });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('샘플 로드 실패: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildSamplesTab() {
+    return Consumer<ScoreLibraryProvider>(
+      builder: (context, library, _) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('테스트 샘플',
+                  style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.music_note, size: 32),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Beethoven Piano Sonata No. 10',
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium,
+                                ),
+                                Text(
+                                  'Op. 14 No. 2 — I. Allegro',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        children: const [
+                          Chip(label: Text('G major')),
+                          Chip(label: Text('2/4')),
+                          Chip(label: Text('Piano')),
+                          Chip(label: Text('6 pages')),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (_isSampleLoading)
+                        const Center(child: CircularProgressIndicator())
+                      else if (_sampleLoaded)
+                        Column(
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.check_circle, color: Colors.green),
+                                SizedBox(width: 8),
+                                Text('샘플 로드 완료'),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                              onPressed: () => context.go('/'),
+                              icon: const Icon(Icons.library_music),
+                              label: const Text('라이브러리로 이동'),
+                            ),
+                          ],
+                        )
+                      else
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () => _loadBeethovenSample(library),
+                            icon: const Icon(Icons.download),
+                            label: const Text('샘플 악보 불러오기'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
