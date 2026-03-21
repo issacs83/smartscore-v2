@@ -7,6 +7,7 @@ import 'screens/score_viewer_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/capture_screen.dart';
 import 'screens/debug_screen.dart';
+import 'screens/restoration_screen.dart';
 
 /// Creates the GoRouter configuration for the app
 GoRouter createRouter() {
@@ -43,6 +44,16 @@ GoRouter createRouter() {
             name: 'settings',
             pageBuilder: (context, state) {
               return const MaterialPage(child: SettingsScreen());
+            },
+          ),
+          GoRoute(
+            path: 'restore/:id',
+            name: 'restore',
+            pageBuilder: (context, state) {
+              final scoreId = state.pathParameters['id']!;
+              return MaterialPage(
+                child: RestorationScreen(scoreId: scoreId),
+              );
             },
           ),
           GoRoute(

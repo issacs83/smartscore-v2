@@ -24,6 +24,9 @@ dependencies:
   material_design_icons_flutter: ^7.0.0
   google_fonts: ^5.0.0
 
+  # HTTP client
+  http: ^1.1.0
+
   # File handling
   file_picker: ^5.0.0
   image_picker: ^0.8.0

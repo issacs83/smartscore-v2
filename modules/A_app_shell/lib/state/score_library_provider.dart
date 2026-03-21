@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import '../../b_score_input/score_entry.dart';
 import '../../b_score_input/score_library.dart';
 
 /// Score library provider - wraps Module B
@@ -115,6 +118,30 @@ class ScoreLibraryProvider extends ChangeNotifier {
   void selectScore(String scoreId) {
     _selectedScoreId = scoreId;
     notifyListeners();
+  }
+
+  /// Get image bytes for a score's original image
+  Future<Uint8List?> getImageBytes(String scoreId) async {
+    try {
+      if (moduleB == null) {
+        throw Exception('Module B not initialized');
+      }
+
+      final score = await moduleB!.getScore(scoreId);
+      if (score == null) return null;
+
+      final versionInfo = score.getVersion(VersionType.originalImage);
+      if (versionInfo == null) return null;
+
+      final file = File(versionInfo.filePath);
+      if (await file.exists()) {
+        return await file.readAsBytes();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[ScoreLibraryProvider] getImageBytes error: $e');
+      return null;
+    }
   }
 
   /// Clear error

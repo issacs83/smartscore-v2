@@ -5,6 +5,7 @@ import 'score_library_provider.dart';
 import 'score_renderer_provider.dart';
 import 'device_provider.dart';
 import 'comparison_provider.dart';
+import 'restoration_provider.dart';
 
 /// Creates all providers for the app
 List<ChangeNotifierProvider<dynamic>> createProviders(AppState appState) {
@@ -32,6 +33,11 @@ List<ChangeNotifierProvider<dynamic>> createProviders(AppState appState) {
     // Comparison (Module C)
     ChangeNotifierProvider<ComparisonProvider>(
       create: (_) => ComparisonProvider(),
+    ),
+
+    // Restoration (Module C image restoration)
+    ChangeNotifierProvider<RestorationProvider>(
+      create: (_) => RestorationProvider(),
     ),
   ];
 }
