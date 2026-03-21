@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'dart:math' as math;
-import 'package:crypto/crypto.dart';
 
 /// Validation error for Score.validate()
 class ValidationError {

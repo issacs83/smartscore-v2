@@ -36,8 +36,8 @@ class ScoreLibraryProvider extends ChangeNotifier {
                 'composer': score.composer ?? '',
                 'sourceType': score.sourceType.toString(),
                 'dateImported': score.createdAt.toIso8601String(),
-                'pageCount': score.pageCount ?? 0,
-                'measureCount': score.measureCount ?? 0,
+                'pageCount': score.versions.length,
+                'measureCount': 0,
               })
           .toList();
       _allScores.sort((a, b) =>
@@ -68,8 +68,8 @@ class ScoreLibraryProvider extends ChangeNotifier {
           'composer': score.composer ?? '',
           'sourceType': score.sourceType.toString(),
           'dateImported': score.createdAt.toIso8601String(),
-          'pageCount': score.pageCount ?? 0,
-          'measureCount': score.measureCount ?? 0,
+          'pageCount': score.versions.length,
+          'measureCount': 0,
         };
       } else {
         _lastError = 'Score not found';

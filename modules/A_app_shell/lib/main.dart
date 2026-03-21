@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'app.dart';
 import 'state/app_state.dart';
 import 'state/providers.dart';
-import 'config.dart';
 
 void main() async {
   // Initialize logging first

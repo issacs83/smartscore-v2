@@ -114,23 +114,24 @@ class _CaptureScreenState extends State<CaptureScreen> {
       if (fileType == 'pdf') {
         // Call Module B.importPdf()
         final result = await library.moduleB?.importPdf(filePath);
-        if (result?.ok ?? false) {
-          newScoreId = result.value.id;
+        if (result?.isSuccess ?? false) {
+          newScoreId = result!.valueOrNull!.id;
           success = true;
         }
       } else if (fileType == 'musicxml') {
         // Call Module B.importMusicXml()
         final result = await library.moduleB?.importMusicXml(filePath);
-        if (result?.ok ?? false) {
-          newScoreId = result.value.id;
+        if (result?.isSuccess ?? false) {
+          newScoreId = result!.valueOrNull!.id;
           success = true;
         }
       } else if (fileType == 'image') {
         // Call Module B.importImage()
         final bytes = await _readFileAsBytes(filePath);
-        final result = await library.moduleB?.importImage(bytes);
-        if (result?.ok ?? false) {
-          newScoreId = result.value.id;
+        final fileName = filePath.split('/').last;
+        final result = await library.moduleB?.importImage(bytes, fileName);
+        if (result?.isSuccess ?? false) {
+          newScoreId = result!.valueOrNull!.id;
           success = true;
         }
       }

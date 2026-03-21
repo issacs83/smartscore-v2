@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/ui_state_provider.dart';
 import '../state/device_provider.dart';
+import '../../k_external_device/device_action.dart';
 import '../config.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -182,7 +183,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             // Scan for devices button
             ElevatedButton.icon(
               onPressed: () {
-                devices.scanDevices('bluetooth');
+                devices.scanDevices(DeviceType.bluetoothPedal);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Scanning for devices...')),
                 );
@@ -223,7 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     trailing: IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () {
-                        devices.disconnectDevice(device['id']);
+                        devices.disconnectDevice(DeviceType.bluetoothPedal, device['id']);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Device disconnected')),
                         );

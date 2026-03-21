@@ -88,7 +88,7 @@ class _DebugScreenState extends State<DebugScreen>
   Widget _buildEventsTab() {
     return Consumer<ScoreLibraryProvider>(
       builder: (context, library, _) {
-        final events = library.moduleB?.eventLog ?? [];
+        final events = <Map<String, dynamic>>[];  // eventLog not available on ScoreLibrary
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -365,7 +365,7 @@ class _DebugScreenState extends State<DebugScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.2),
+                    color: statusColor.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -398,7 +398,7 @@ class _DebugScreenState extends State<DebugScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
+              color: color.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(

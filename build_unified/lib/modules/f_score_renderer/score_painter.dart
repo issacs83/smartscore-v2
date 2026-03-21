@@ -78,7 +78,7 @@ class ScorePainter extends CustomPainter {
 
   void _drawRect(Canvas canvas, DrawRect cmd) {
     final paint = Paint()
-      ..color = _parseColor(cmd.color).withOpacity(cmd.opacity)
+      ..color = _parseColor(cmd.color).withValues(alpha: cmd.opacity)
       ..strokeWidth = cmd.strokeWidth
       ..style = cmd.filled ? PaintingStyle.fill : PaintingStyle.stroke;
 
