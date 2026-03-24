@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../../k_external_device/device_manager.dart';
 import '../../k_external_device/device_action.dart';
@@ -9,6 +11,13 @@ class DeviceProvider extends ChangeNotifier {
   Map<String, dynamic>? _lastAction;
   bool _isScanning = false;
   String? _lastError;
+
+  // Broadcast stream for device actions consumed by UI screens.
+  final StreamController<DeviceAction> _actionBroadcast =
+      StreamController<DeviceAction>.broadcast();
+
+  /// Stream of device actions (page-turn pedal, MIDI, keyboard).
+  Stream<DeviceAction> get onDeviceAction => _actionBroadcast.stream;
 
   DeviceProvider(this.moduleK);
 
@@ -34,6 +43,8 @@ class DeviceProvider extends ChangeNotifier {
             'timestamp': DateTime.now().toIso8601String(),
           };
           debugPrint('[DeviceProvider] Action: $action');
+          // Broadcast to subscribers (e.g. ScoreViewerScreen)
+          _actionBroadcast.add(action);
           notifyListeners();
         },
         onError: (error) {
@@ -155,6 +166,12 @@ class DeviceProvider extends ChangeNotifier {
   void clearError() {
     _lastError = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _actionBroadcast.close();
+    super.dispose();
   }
 
   /// Dump state for debugging
