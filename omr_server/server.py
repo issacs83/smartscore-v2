@@ -32,6 +32,7 @@ import sys
 import tempfile
 import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 import json
 import cgi
 import urllib.request
@@ -808,7 +809,10 @@ def main():
     parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")
     args = parser.parse_args()
 
-    server = HTTPServer((args.host, args.port), OMRHandler)
+    class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+    server = ThreadingHTTPServer((args.host, args.port), OMRHandler)
     print(f"[OMR] Server starting on {args.host}:{args.port}")
 
     if _homr_available:
