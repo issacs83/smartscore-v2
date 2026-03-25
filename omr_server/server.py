@@ -106,8 +106,30 @@ class OMRHandler(BaseHTTPRequestHandler):
                 tmp.write(image_data)
                 tmp_path = tmp.name
 
+            # Try OMR with preprocessing first, fallback to original
+            original_path = tmp_path
             try:
-                musicxml = self._run_omr(tmp_path)
+                from preprocess import preprocess_for_omr
+                preprocessed_path = tmp_path.rsplit(".", 1)[0] + "_preprocessed.png"
+                preprocess_for_omr(tmp_path, preprocessed_path)
+                if os.path.exists(preprocessed_path):
+                    tmp_path = preprocessed_path
+                    print(f"[OMR] Using preprocessed image")
+            except Exception as e:
+                print(f"[OMR] Preprocess skipped: {e}")
+
+            try:
+                musicxml = None
+                try:
+                    musicxml = self._run_omr(tmp_path)
+                except Exception as e1:
+                    # Preprocessed image failed, try original
+                    if tmp_path != original_path:
+                        print(f"[OMR] Preprocessed failed ({e1}), trying original")
+                        tmp_path = original_path
+                        musicxml = self._run_omr(tmp_path)
+                    else:
+                        raise
                 if musicxml:
                     print(f"[OMR] Success: {len(musicxml)} chars MusicXML")
 
