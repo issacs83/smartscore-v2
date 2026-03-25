@@ -322,6 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (value == 'scan') _scanImage();
                         if (value == 'camera') _captureCamera();
                         if (value == 'xml') _importFile();
+                        if (value == 'imslp') context.go('/imslp');
                       },
                       itemBuilder: (ctx) => [
                         const PopupMenuItem(
@@ -348,6 +349,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             leading: Icon(Icons.upload_file),
                             title: Text('Import MusicXML'),
                             subtitle: Text('Open .xml or .musicxml file'),
+                            dense: true,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'imslp',
+                          child: ListTile(
+                            leading: Icon(Icons.library_music),
+                            title: Text('Browse IMSLP'),
+                            subtitle: Text('Search 210,000+ free scores'),
                             dense: true,
                           ),
                         ),

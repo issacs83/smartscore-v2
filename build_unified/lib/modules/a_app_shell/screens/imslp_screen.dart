@@ -1,0 +1,739 @@
+import 'dart:async';
+import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../demo_data.dart';
+
+const String _omrServerUrl = 'http://58.29.21.11:5000';
+
+/// A single search result from IMSLP.
+class ImslpResult {
+  final String title;
+  final String pageTitle;
+  final String snippet;
+
+  const ImslpResult({
+    required this.title,
+    required this.pageTitle,
+    required this.snippet,
+  });
+
+  factory ImslpResult.fromJson(Map<String, dynamic> json) {
+    return ImslpResult(
+      title: json['title'] as String? ?? '',
+      pageTitle: json['title'] as String? ?? '',
+      snippet: _stripHtml(json['snippet'] as String? ?? ''),
+    );
+  }
+
+  static String _stripHtml(String html) {
+    return html.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+  }
+}
+
+/// A downloadable file entry parsed from an IMSLP page.
+class ImslpFile {
+  final String label;
+  final String url;
+  final String fileType; // 'xml', 'pdf', 'other'
+
+  const ImslpFile({
+    required this.label,
+    required this.url,
+    required this.fileType,
+  });
+}
+
+/// IMSLP browse and download screen.
+class ImslpScreen extends StatefulWidget {
+  const ImslpScreen({super.key});
+
+  @override
+  State<ImslpScreen> createState() => _ImslpScreenState();
+}
+
+class _ImslpScreenState extends State<ImslpScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+
+  List<ImslpResult> _results = [];
+  bool _searching = false;
+  String _searchError = '';
+  String _lastQuery = '';
+
+  Timer? _debounceTimer;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _search(String query) async {
+    final q = query.trim();
+    if (q.isEmpty || q == _lastQuery) return;
+    _lastQuery = q;
+
+    setState(() {
+      _searching = true;
+      _searchError = '';
+      _results = [];
+    });
+
+    try {
+      final encodedQuery = Uri.encodeQueryComponent(q);
+      final url = '$_omrServerUrl/imslp/search?q=$encodedQuery';
+
+      final request = html.HttpRequest();
+      request.open('GET', url);
+      request.setRequestHeader('Accept', 'application/json');
+
+      final completer = Completer<void>();
+      request.onLoad.listen((_) => completer.complete());
+      request.onError.listen((_) => completer.completeError('Network error'));
+      request.send();
+
+      await completer.future;
+
+      if (request.status == 200) {
+        final data = jsonDecode(request.responseText ?? '{}');
+        final rawResults = data['results'] as List<dynamic>? ?? [];
+        final results = rawResults
+            .map((e) => ImslpResult.fromJson(e as Map<String, dynamic>))
+            .where((r) => r.title.isNotEmpty)
+            .toList();
+
+        if (mounted) {
+          setState(() {
+            _results = results;
+            _searching = false;
+          });
+        }
+      } else {
+        throw Exception('Server returned ${request.status}');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searching = false;
+          _searchError = 'Search failed: $e';
+        });
+      }
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _debounceTimer?.cancel();
+    if (value.trim().length >= 3) {
+      _debounceTimer = Timer(const Duration(milliseconds: 600), () {
+        _search(value);
+      });
+    }
+  }
+
+  void _onSearchSubmit(String value) {
+    _debounceTimer?.cancel();
+    _search(value);
+  }
+
+  void _openPage(ImslpResult result) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ImslpPageDetail(result: result),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go('/'),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.library_music, color: colorScheme.primary, size: 24),
+            const SizedBox(width: 8),
+            const Text(
+              'Browse IMSLP',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildSearchBar(colorScheme),
+            Expanded(child: _buildBody(colorScheme)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocus,
+        decoration: InputDecoration(
+          hintText: 'Search composer, title, instrument...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _results = [];
+                      _searchError = '';
+                      _lastQuery = '';
+                    });
+                  },
+                )
+              : null,
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+        ),
+        textInputAction: TextInputAction.search,
+        onChanged: _onSearchChanged,
+        onSubmitted: _onSearchSubmit,
+      ),
+    );
+  }
+
+  Widget _buildBody(ColorScheme colorScheme) {
+    if (_searching) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_searchError.isNotEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: colorScheme.error),
+              const SizedBox(height: 16),
+              Text(
+                _searchError,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colorScheme.error),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => _search(_searchController.text),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_results.isEmpty && _lastQuery.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              'No results for "$_lastQuery"',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try a different search term',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_results.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.library_music, size: 64, color: Colors.grey.shade300),
+            const SizedBox(height: 20),
+            Text(
+              '210,000+ free scores',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Search the IMSLP public domain library',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      itemCount: _results.length,
+      itemBuilder: (ctx, i) => _ResultCard(
+        result: _results[i],
+        onTap: () => _openPage(_results[i]),
+      ),
+    );
+  }
+}
+
+class _ResultCard extends StatelessWidget {
+  final ImslpResult result;
+  final VoidCallback onTap;
+
+  const _ResultCard({required this.result, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.music_note,
+                  color: colorScheme.onPrimaryContainer,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      result.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (result.snippet.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        result.snippet,
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Detail page showing files for an IMSLP page entry.
+class _ImslpPageDetail extends StatefulWidget {
+  final ImslpResult result;
+
+  const _ImslpPageDetail({required this.result});
+
+  @override
+  State<_ImslpPageDetail> createState() => _ImslpPageDetailState();
+}
+
+class _ImslpPageDetailState extends State<_ImslpPageDetail> {
+  List<ImslpFile> _files = [];
+  bool _loading = true;
+  String _loadError = '';
+  String? _downloadingUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPageFiles();
+  }
+
+  Future<void> _loadPageFiles() async {
+    setState(() {
+      _loading = true;
+      _loadError = '';
+    });
+
+    try {
+      final encodedTitle = Uri.encodeQueryComponent(widget.result.pageTitle);
+      final url = '$_omrServerUrl/imslp/page?title=$encodedTitle';
+
+      final request = html.HttpRequest();
+      request.open('GET', url);
+      request.setRequestHeader('Accept', 'application/json');
+
+      final completer = Completer<void>();
+      request.onLoad.listen((_) => completer.complete());
+      request.onError.listen((_) => completer.completeError('Network error'));
+      request.send();
+
+      await completer.future;
+
+      if (request.status == 200) {
+        final data = jsonDecode(request.responseText ?? '{}');
+        final rawFiles = data['files'] as List<dynamic>? ?? [];
+        final files = rawFiles.map((e) {
+          final m = e as Map<String, dynamic>;
+          final fileUrl = m['url'] as String? ?? '';
+          final label = m['label'] as String? ?? fileUrl;
+          final ext = fileUrl.toLowerCase();
+          String fileType = 'other';
+          if (ext.contains('.xml') || ext.contains('musicxml')) {
+            fileType = 'xml';
+          } else if (ext.contains('.pdf')) {
+            fileType = 'pdf';
+          }
+          return ImslpFile(label: label, url: fileUrl, fileType: fileType);
+        }).toList();
+
+        // Sort: MusicXML first, then PDF, then others
+        files.sort((a, b) {
+          const order = {'xml': 0, 'pdf': 1, 'other': 2};
+          return (order[a.fileType] ?? 2).compareTo(order[b.fileType] ?? 2);
+        });
+
+        if (mounted) {
+          setState(() {
+            _files = files;
+            _loading = false;
+          });
+        }
+      } else {
+        throw Exception('Server returned ${request.status}');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadError = 'Failed to load files: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _downloadAndImport(ImslpFile file) async {
+    if (file.fileType != 'xml') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only MusicXML files can be imported into SmartScore'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _downloadingUrl = file.url);
+
+    try {
+      final proxyUrl =
+          '$_omrServerUrl/imslp/download?url=${Uri.encodeQueryComponent(file.url)}';
+
+      final request = html.HttpRequest();
+      request.open('GET', proxyUrl);
+
+      final completer = Completer<void>();
+      request.onLoad.listen((_) => completer.complete());
+      request.onError.listen((_) => completer.completeError('Download failed'));
+      request.send();
+
+      await completer.future;
+
+      if (request.status == 200) {
+        final xmlContent = request.responseText ?? '';
+        final isXml = xmlContent.trimLeft().startsWith('<?xml') ||
+            xmlContent.trimLeft().startsWith('<score-partwise') ||
+            xmlContent.trimLeft().startsWith('<score-timewise');
+
+        if (!isXml) {
+          throw Exception('Downloaded file is not valid MusicXML');
+        }
+
+        final title = widget.result.title;
+        final scoreId = DemoData.addImported(title, xmlContent);
+
+        if (mounted) {
+          setState(() => _downloadingUrl = null);
+          context.go('/viewer/$scoreId');
+        }
+      } else {
+        throw Exception('Download failed: ${request.status}');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _downloadingUrl = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Import failed: $e'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          widget.result.title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: SafeArea(
+        child: _buildBody(colorScheme),
+      ),
+    );
+  }
+
+  Widget _buildBody(ColorScheme colorScheme) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_loadError.isNotEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: colorScheme.error),
+              const SizedBox(height: 16),
+              Text(
+                _loadError,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colorScheme.error),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _loadPageFiles,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_files.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_off, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              'No downloadable files found',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Available files',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+          ),
+        ),
+        ..._files.map((file) => _FileCard(
+              file: file,
+              isDownloading: _downloadingUrl == file.url,
+              onDownload: () => _downloadAndImport(file),
+            )),
+      ],
+    );
+  }
+}
+
+class _FileCard extends StatelessWidget {
+  final ImslpFile file;
+  final bool isDownloading;
+  final VoidCallback onDownload;
+
+  const _FileCard({
+    required this.file,
+    required this.isDownloading,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isXml = file.fileType == 'xml';
+    final isPdf = file.fileType == 'pdf';
+
+    final iconData = isXml
+        ? Icons.text_snippet
+        : isPdf
+            ? Icons.picture_as_pdf
+            : Icons.insert_drive_file;
+
+    final iconColor = isXml
+        ? colorScheme.primary
+        : isPdf
+            ? Colors.red.shade600
+            : Colors.grey.shade600;
+
+    final badgeColor = isXml
+        ? colorScheme.primaryContainer
+        : isPdf
+            ? Colors.red.shade50
+            : Colors.grey.shade100;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: badgeColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(iconData, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    file.label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    file.fileType.toUpperCase(),
+                    style: TextStyle(
+                      color: iconColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            if (isDownloading)
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (isXml)
+              FilledButton.icon(
+                onPressed: onDownload,
+                icon: const Icon(Icons.download, size: 16),
+                label: const Text('Import'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                ),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: onDownload,
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('View'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

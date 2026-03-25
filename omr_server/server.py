@@ -25,6 +25,9 @@ import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import cgi
+import urllib.request
+import urllib.parse
+import urllib.error
 
 # Try to import homr
 _homr_available = False
@@ -56,14 +59,169 @@ class OMRHandler(BaseHTTPRequestHandler):
     """HTTP request handler for OMR API."""
 
     def do_GET(self):
-        if self.path == "/health":
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+
+        if parsed.path == "/health":
             engine = "homr" if _homr_available else ("audiveris" if _audiveris_available else "none")
             self._json_response({
                 "status": "ready" if (_homr_available or _audiveris_available) else "no_engine",
                 "engine": engine,
             })
+        elif parsed.path == "/imslp/search":
+            self._handle_imslp_search(params)
+        elif parsed.path == "/imslp/page":
+            self._handle_imslp_page(params)
+        elif parsed.path == "/imslp/download":
+            self._handle_imslp_download(params)
         else:
             self._json_response({"error": "Not found"}, 404)
+
+    def _handle_imslp_search(self, params):
+        """Proxy IMSLP MediaWiki search API."""
+        query_list = params.get("q", [])
+        if not query_list:
+            self._json_response({"error": "Missing query parameter 'q'"}, 400)
+            return
+
+        query = query_list[0].strip()
+        if not query:
+            self._json_response({"error": "Empty query"}, 400)
+            return
+
+        try:
+            api_params = urllib.parse.urlencode({
+                "action": "query",
+                "list": "search",
+                "srsearch": query,
+                "srnamespace": "0",
+                "srlimit": "20",
+                "format": "json",
+            })
+            api_url = f"https://imslp.org/api.php?{api_params}"
+            print(f"[IMSLP] Search: {api_url}")
+
+            req = urllib.request.Request(
+                api_url,
+                headers={"User-Agent": "SmartScore/2.0 (educational music app)"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = json.loads(resp.read().decode("utf-8"))
+
+            search_hits = raw.get("query", {}).get("search", [])
+            results = [
+                {
+                    "title": hit.get("title", ""),
+                    "snippet": hit.get("snippet", ""),
+                    "timestamp": hit.get("timestamp", ""),
+                }
+                for hit in search_hits
+            ]
+            self._json_response({"results": results, "query": query})
+
+        except urllib.error.URLError as e:
+            print(f"[IMSLP] Search error: {e}")
+            self._json_response({"error": f"IMSLP unreachable: {e}"}, 502)
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e)}, 500)
+
+    def _handle_imslp_page(self, params):
+        """Proxy IMSLP page content and extract file links."""
+        title_list = params.get("title", [])
+        if not title_list:
+            self._json_response({"error": "Missing parameter 'title'"}, 400)
+            return
+
+        page_title = title_list[0].strip()
+        if not page_title:
+            self._json_response({"error": "Empty title"}, 400)
+            return
+
+        try:
+            api_params = urllib.parse.urlencode({
+                "action": "query",
+                "titles": page_title,
+                "prop": "extlinks|info",
+                "ellimit": "500",
+                "format": "json",
+            })
+            api_url = f"https://imslp.org/api.php?{api_params}"
+            print(f"[IMSLP] Page: {api_url}")
+
+            req = urllib.request.Request(
+                api_url,
+                headers={"User-Agent": "SmartScore/2.0 (educational music app)"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = json.loads(resp.read().decode("utf-8"))
+
+            pages = raw.get("query", {}).get("pages", {})
+            files = []
+            for page_data in pages.values():
+                ext_links = page_data.get("extlinks", [])
+                for link in ext_links:
+                    url = link.get("*", "")
+                    lower_url = url.lower()
+                    if any(lower_url.endswith(ext) for ext in [".xml", ".musicxml", ".mxl", ".pdf"]):
+                        label = url.split("/")[-1]
+                        files.append({"url": url, "label": label})
+
+            self._json_response({
+                "title": page_title,
+                "files": files,
+            })
+
+        except urllib.error.URLError as e:
+            print(f"[IMSLP] Page error: {e}")
+            self._json_response({"error": f"IMSLP unreachable: {e}"}, 502)
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e)}, 500)
+
+    def _handle_imslp_download(self, params):
+        """Proxy-download a file from IMSLP and return its content."""
+        url_list = params.get("url", [])
+        if not url_list:
+            self._json_response({"error": "Missing parameter 'url'"}, 400)
+            return
+
+        file_url = url_list[0].strip()
+        # Validate that the URL points to imslp.org or imslp-related CDN only
+        parsed_file_url = urllib.parse.urlparse(file_url)
+        allowed_hosts = {"imslp.org", "www.imslp.org", "imslp.simssa.ca", "petruccimusiclibrary.org"}
+        if parsed_file_url.netloc not in allowed_hosts:
+            self._json_response({"error": "URL not allowed: must be from imslp.org"}, 403)
+            return
+
+        lower_url = file_url.lower()
+        if not any(lower_url.endswith(ext) for ext in [".xml", ".musicxml", ".mxl"]):
+            self._json_response({"error": "Only MusicXML files (.xml, .musicxml, .mxl) can be downloaded"}, 400)
+            return
+
+        try:
+            print(f"[IMSLP] Download: {file_url}")
+            req = urllib.request.Request(
+                file_url,
+                headers={"User-Agent": "SmartScore/2.0 (educational music app)"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content = resp.read().decode("utf-8", errors="replace")
+
+            body = content.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/xml; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+
+        except urllib.error.URLError as e:
+            print(f"[IMSLP] Download error: {e}")
+            self._json_response({"error": f"Download failed: {e}"}, 502)
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e)}, 500)
 
     def do_POST(self):
         if self.path != "/omr":
