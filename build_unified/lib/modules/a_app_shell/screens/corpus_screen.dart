@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../demo_data.dart';
 
-const String _omrServerUrl = 'http://58.29.21.11:5000';
+const String _omrServerUrl = '';
 
 /// A single search result from the music21 corpus.
 class CorpusResult {

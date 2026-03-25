@@ -8,7 +8,7 @@ import 'dart:html' as html;
 
 import '../../../demo_data.dart';
 
-const String _omrServerUrl = 'http://58.29.21.11:5000';
+const String _omrServerUrl = '';
 
 /// Home screen: shows demo scores and allows MusicXML file import.
 class HomeScreen extends StatefulWidget {
