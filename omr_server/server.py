@@ -527,6 +527,9 @@ class OMRHandler(BaseHTTPRequestHandler):
             self._json_response({"error": str(e)}, 500)
 
     def do_POST(self):
+        if self.path == "/omr/multi":
+            self._handle_omr_multi()
+            return
         if self.path != "/omr":
             self._json_response({"error": "Not found"}, 404)
             return
@@ -778,6 +781,188 @@ class OMRHandler(BaseHTTPRequestHandler):
         except Exception as e:
             print(f"[Render] MIDI error: {e}")
         return None
+
+    def _handle_omr_multi(self):
+        """POST /omr/multi — process multiple page images and return merged MusicXML.
+
+        Body: multipart/form-data with fields image_0, image_1, image_2, ...
+        Returns: { "musicxml": "<merged>", "png_base64": "...",
+                   "page_count": N, "success": true }
+        """
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                self._json_response(
+                    {"error": "Content-Type must be multipart/form-data", "success": False}, 400
+                )
+                return
+
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": content_type,
+                },
+            )
+
+            # Collect image_0, image_1, ... in order
+            image_fields = sorted(
+                [k for k in form.keys() if k.startswith("image_")],
+                key=lambda k: int(k.split("_", 1)[1]) if k.split("_", 1)[1].isdigit() else 0,
+            )
+
+            if not image_fields:
+                self._json_response(
+                    {"error": "No image fields found (expected image_0, image_1, ...)", "success": False},
+                    400,
+                )
+                return
+
+            print(f"[OMR/multi] Processing {len(image_fields)} page(s)")
+
+            tmp_paths = []
+            try:
+                # Write each image to a temp file
+                for field_name in image_fields:
+                    item = form[field_name]
+                    if not item.file:
+                        continue
+                    image_data = item.file.read()
+                    filename = item.filename or f"{field_name}.png"
+                    suffix = os.path.splitext(filename)[1] or ".png"
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                        tmp.write(image_data)
+                        tmp_paths.append(tmp.name)
+
+                if not tmp_paths:
+                    self._json_response(
+                        {"error": "All image fields were empty", "success": False}, 400
+                    )
+                    return
+
+                # Run OMR on each page
+                xml_list = []
+                for i, img_path in enumerate(tmp_paths):
+                    print(f"[OMR/multi] Page {i + 1}/{len(tmp_paths)}: {img_path}")
+                    try:
+                        xml = self._run_omr(img_path)
+                        if xml:
+                            xml_list.append(xml)
+                        else:
+                            print(f"[OMR/multi] Page {i + 1}: no output")
+                    except Exception as page_err:
+                        print(f"[OMR/multi] Page {i + 1} failed: {page_err}")
+
+                if not xml_list:
+                    self._json_response(
+                        {"error": "OMR produced no output for any page", "success": False}, 500
+                    )
+                    return
+
+                # Merge all pages into one score
+                merged_xml = self._merge_musicxml_pages(xml_list)
+                print(f"[OMR/multi] Merged {len(xml_list)} page(s): {len(merged_xml)} chars")
+
+                # Render merged score to PNG
+                render_base = tmp_paths[0].rsplit(".", 1)[0] + "_multi"
+                png_b64 = self._render_to_png(merged_xml, render_base)
+                midi_b64 = self._render_to_midi(render_base)
+
+                response = {
+                    "musicxml": merged_xml,
+                    "page_count": len(xml_list),
+                    "success": True,
+                }
+                if png_b64:
+                    response["png_base64"] = png_b64
+                if midi_b64:
+                    response["midi_base64"] = midi_b64
+
+                self._json_response(response)
+
+            finally:
+                for p in tmp_paths:
+                    if os.path.exists(p):
+                        os.unlink(p)
+
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e), "success": False}, 500)
+
+    def _merge_musicxml_pages(self, xml_list):
+        """Merge multiple MusicXML strings into one score by concatenating measures.
+
+        Strategy: take all <measure> elements from all pages into one <part>.
+        Renumbers measures sequentially. Header attributes (key, time, clef)
+        are preserved from page 1 measure 1 only.
+        """
+        import re as _re
+
+        if len(xml_list) == 1:
+            return xml_list[0]
+
+        def extract_measures(xml_text):
+            """Return list of <measure ...>...</measure> strings."""
+            return _re.findall(
+                r'<measure\b[^>]*>.*?</measure>',
+                xml_text,
+                flags=_re.DOTALL,
+            )
+
+        def get_header(xml_text):
+            """Extract everything before <part id=...> as the score header."""
+            match = _re.search(r'<part\b', xml_text)
+            if match:
+                return xml_text[:match.start()]
+            return ""
+
+        all_measures = []
+        for page_xml in xml_list:
+            all_measures.extend(extract_measures(page_xml))
+
+        # Renumber measures sequentially
+        renumbered = []
+        for idx, measure_str in enumerate(all_measures, start=1):
+            # Replace number="..." attribute
+            new_measure = _re.sub(
+                r'(<measure\s[^>]*\bnumber=")[^"]*(")',
+                lambda m, n=idx: f'{m.group(1)}{n}{m.group(2)}',
+                measure_str,
+            )
+            # Also handle number='...' (single quotes)
+            new_measure = _re.sub(
+                r"(<measure\s[^>]*\bnumber=')[^']*(')",
+                lambda m, n=idx: f"{m.group(1)}{n}{m.group(2)}",
+                new_measure,
+            )
+            renumbered.append(new_measure)
+
+        # Build merged document using header from page 1
+        header = get_header(xml_list[0])
+        if not header.strip():
+            # Fallback minimal header
+            header = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<score-partwise version="3.1">\n'
+                '  <part-list>'
+                '<score-part id="P1"><part-name>Piano</part-name></score-part>'
+                '</part-list>\n'
+            )
+
+        measures_block = "\n    ".join(renumbered)
+        merged = (
+            f'{header}'
+            f'<part id="P1">\n'
+            f'    {measures_block}\n'
+            f'  </part>\n'
+            f'</score-partwise>'
+        )
+
+        if not merged.strip().startswith("<?xml"):
+            merged = '<?xml version="1.0" encoding="UTF-8"?>\n' + merged
+
+        return merged
 
     def _json_response(self, data, status=200):
         """Send JSON response with CORS headers."""

@@ -319,6 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icon(Icons.add, color: colorScheme.primary),
                       tooltip: 'Import',
                       onSelected: (value) {
+                        if (value == 'scan_score') context.go('/scan');
                         if (value == 'scan') _scanImage();
                         if (value == 'camera') _captureCamera();
                         if (value == 'xml') _importFile();
@@ -326,6 +327,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (value == 'imslp') context.go('/imslp');
                       },
                       itemBuilder: (ctx) => [
+                        const PopupMenuItem(
+                          value: 'scan_score',
+                          child: ListTile(
+                            leading: Icon(Icons.document_scanner),
+                            title: Text('Scan Score (Multi-Page)'),
+                            subtitle: Text('Photograph 1+ pages → merge into one score'),
+                            dense: true,
+                          ),
+                        ),
+                        const PopupMenuDivider(),
                         const PopupMenuItem(
                           value: 'corpus',
                           child: ListTile(
@@ -384,6 +395,8 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _CorpusBanner(onTap: () => context.go('/corpus')),
+              const SizedBox(height: 10),
+              _ScanScoreBanner(onTap: () => context.go('/scan')),
               const SizedBox(height: 16),
               Text(
                 'Scores',
@@ -506,6 +519,65 @@ class _ScoreCard extends StatelessWidget {
               child: const Text('Open'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Prominent banner for multi-page score scanning.
+class _ScanScoreBanner extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ScanScoreBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colorScheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.document_scanner,
+                color: colorScheme.secondary,
+                size: 32,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Scan Score (Multi-Page)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Photograph multiple pages — merged into one score automatically',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSecondaryContainer.withOpacity(0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: colorScheme.secondary),
+            ],
+          ),
         ),
       ),
     );

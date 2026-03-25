@@ -10,6 +10,7 @@ import 'screens/settings_screen.dart';
 import 'screens/capture_screen.dart';
 import 'screens/import_screen.dart';
 import 'screens/debug_screen.dart';
+import 'screens/scan_screen.dart';
 
 /// Creates the GoRouter configuration for the app
 GoRouter createRouter() {
@@ -60,6 +61,13 @@ GoRouter createRouter() {
             name: 'camera',
             pageBuilder: (context, state) {
               return const MaterialPage(child: CaptureScreen());
+            },
+          ),
+          GoRoute(
+            path: 'scan',
+            name: 'scan',
+            pageBuilder: (context, state) {
+              return const MaterialPage(child: ScanScreen());
             },
           ),
           GoRoute(
