@@ -40,11 +40,13 @@ class ImslpFile {
   final String label;
   final String url;
   final String fileType; // 'musicxml', 'pdf', 'midi', 'other'
+  final String wikiUrl;  // fallback wiki page URL
 
   const ImslpFile({
     required this.label,
     required this.url,
     required this.fileType,
+    required this.wikiUrl,
   });
 }
 
@@ -401,12 +403,15 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
   List<ImslpFile> _files = [];
   bool _loading = true;
   String _loadError = '';
-  String? _downloadingUrl;
 
   @override
   void initState() {
     super.initState();
     _loadPageFiles();
+  }
+
+  String get _wikiUrl {
+    return 'https://imslp.org/wiki/${Uri.encodeComponent(widget.result.pageTitle)}';
   }
 
   Future<void> _loadPageFiles() async {
@@ -441,7 +446,9 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
           String fileType = m['type'] as String? ?? '';
           if (fileType.isEmpty) {
             final ext = fileUrl.toLowerCase();
-            if (ext.contains('.xml') || ext.contains('musicxml') || ext.contains('.mxl')) {
+            if (ext.contains('.xml') ||
+                ext.contains('musicxml') ||
+                ext.contains('.mxl')) {
               fileType = 'musicxml';
             } else if (ext.contains('.pdf')) {
               fileType = 'pdf';
@@ -451,7 +458,12 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
               fileType = 'other';
             }
           }
-          return ImslpFile(label: label, url: fileUrl, fileType: fileType);
+          return ImslpFile(
+            label: label,
+            url: fileUrl,
+            fileType: fileType,
+            wikiUrl: _wikiUrl,
+          );
         }).toList();
 
         // Sort: MusicXML first, then PDF, then MIDI, then others
@@ -479,74 +491,99 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
     }
   }
 
-  Future<void> _handleFileAction(ImslpFile file) async {
-    switch (file.fileType) {
-      case 'musicxml':
-        await _importMusicXml(file);
-      case 'pdf':
-        _openInBrowser(file);
-      case 'midi':
-        _openInBrowser(file);
-      default:
-        _openInBrowser(file);
+  /// Show a centered loading dialog with a progress message.
+  Future<T?> _withLoadingDialog<T>({
+    required String message,
+    required Future<T> Function() task,
+  }) async {
+    if (!mounted) return null;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _LoadingDialog(message: message),
+    );
+
+    try {
+      final result = await task();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      return result;
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      rethrow;
     }
   }
 
-  void _openInBrowser(ImslpFile file) {
-    final url = file.url.isNotEmpty
-        ? file.url
-        : 'https://imslp.org/wiki/${Uri.encodeComponent(widget.result.pageTitle)}';
+  /// One-tap handler: auto-detect type and process.
+  Future<void> _openFile(ImslpFile file) async {
+    switch (file.fileType) {
+      case 'musicxml':
+        await _openMusicXml(file);
+      default:
+        _openWikiPage(file);
+    }
+  }
+
+  void _openWikiPage(ImslpFile file) {
+    final url = file.wikiUrl.isNotEmpty ? file.wikiUrl : _wikiUrl;
     html.window.open(url, '_blank');
   }
 
-  Future<void> _importMusicXml(ImslpFile file) async {
-    setState(() => _downloadingUrl = file.url);
+  Future<void> _openMusicXml(ImslpFile file) async {
+    if (file.url.isEmpty) {
+      _openWikiPage(file);
+      return;
+    }
 
     try {
-      final proxyUrl =
-          '$_omrServerUrl/imslp/download?url=${Uri.encodeQueryComponent(file.url)}';
+      final xmlContent = await _withLoadingDialog(
+        message: 'Importing score...',
+        task: () => _downloadMusicXml(file.url),
+      );
 
-      final request = html.HttpRequest();
-      request.open('GET', proxyUrl);
+      if (xmlContent == null || !mounted) return;
 
-      final completer = Completer<void>();
-      request.onLoad.listen((_) => completer.complete());
-      request.onError.listen((_) => completer.completeError('Download failed'));
-      request.send();
-
-      await completer.future;
-
-      if (request.status == 200) {
-        final xmlContent = request.responseText ?? '';
-        final isXml = xmlContent.trimLeft().startsWith('<?xml') ||
-            xmlContent.trimLeft().startsWith('<score-partwise') ||
-            xmlContent.trimLeft().startsWith('<score-timewise');
-
-        if (!isXml) {
-          throw Exception('Downloaded file is not valid MusicXML');
-        }
-
-        final title = widget.result.title;
-        final scoreId = DemoData.addImported(title, xmlContent);
-
-        if (mounted) {
-          setState(() => _downloadingUrl = null);
-          context.go('/viewer/$scoreId');
-        }
-      } else {
-        throw Exception('Download failed: ${request.status}');
-      }
+      final scoreId = DemoData.addImported(widget.result.title, xmlContent);
+      context.go('/viewer/$scoreId');
     } catch (e) {
-      if (mounted) {
-        setState(() => _downloadingUrl = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Import failed: $e'),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import failed: $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
+  }
+
+  Future<String> _downloadMusicXml(String fileUrl) async {
+    final proxyUrl =
+        '$_omrServerUrl/imslp/download?url=${Uri.encodeQueryComponent(fileUrl)}';
+
+    final request = html.HttpRequest();
+    request.open('GET', proxyUrl);
+
+    final completer = Completer<void>();
+    request.onLoad.listen((_) => completer.complete());
+    request.onError.listen((_) => completer.completeError('Download failed'));
+    request.send();
+
+    await completer.future;
+
+    if (request.status != 200) {
+      throw Exception('Download failed: ${request.status}');
+    }
+
+    final xmlContent = request.responseText ?? '';
+    final isXml = xmlContent.trimLeft().startsWith('<?xml') ||
+        xmlContent.trimLeft().startsWith('<score-partwise') ||
+        xmlContent.trimLeft().startsWith('<score-timewise');
+
+    if (!isXml) {
+      throw Exception('Downloaded file is not valid MusicXML');
+    }
+
+    return xmlContent;
   }
 
   @override
@@ -611,6 +648,12 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
               'No downloadable files found',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
             ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => html.window.open(_wikiUrl, '_blank'),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open on IMSLP'),
+            ),
           ],
         ),
       );
@@ -622,33 +665,58 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Text(
-            'Available files',
+            'Available files — tap to open',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Colors.grey.shade600,
                   fontWeight: FontWeight.w500,
                 ),
           ),
         ),
-        ..._files.map((file) => _FileCard(
-              file: file,
-              isDownloading: _downloadingUrl == file.url,
-              onAction: () => _handleFileAction(file),
-            )),
+        ..._files.map(
+          (file) => _FileCard(
+            file: file,
+            onTap: () => _openFile(file),
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// Centered loading dialog with a spinner and a progress message.
+class _LoadingDialog extends StatelessWidget {
+  final String message;
+
+  const _LoadingDialog({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            Text(
+              message,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 class _FileCard extends StatelessWidget {
   final ImslpFile file;
-  final bool isDownloading;
-  final VoidCallback onAction;
+  final VoidCallback onTap;
 
-  const _FileCard({
-    required this.file,
-    required this.isDownloading,
-    required this.onAction,
-  });
+  const _FileCard({required this.file, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -689,94 +757,75 @@ class _FileCard extends StatelessWidget {
       badgeLabel = file.fileType.toUpperCase();
     }
 
+    final String actionHint;
+    if (isMusicXml) {
+      actionHint = 'Tap to import & render';
+    } else {
+      actionHint = 'Tap to open on IMSLP';
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: badgeColor,
-                borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(iconData, color: iconColor, size: 22),
               ),
-              child: Icon(iconData, color: iconColor, size: 22),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    file.label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 14,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.label,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    badgeLabel,
-                    style: TextStyle(
-                      color: iconColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(height: 2),
+                    Text(
+                      badgeLabel,
+                      style: TextStyle(
+                        color: iconColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            if (isDownloading)
-              const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else if (isMusicXml)
-              FilledButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.download, size: 16),
-                label: const Text('Import'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                ),
-              )
-            else if (isMidi)
-              FilledButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.play_arrow, size: 16),
-                label: const Text('Play'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                ),
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('View'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      actionHint,
+                      style: TextStyle(
+                        color: Colors.grey.shade400,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-          ],
+              const SizedBox(width: 12),
+              Icon(
+                isMusicXml ? Icons.chevron_right : Icons.open_in_new,
+                color: isMusicXml ? colorScheme.primary : Colors.grey.shade400,
+                size: isMusicXml ? 24 : 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
