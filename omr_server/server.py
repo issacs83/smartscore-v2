@@ -139,37 +139,61 @@ class OMRHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            api_params = urllib.parse.urlencode({
-                "action": "query",
-                "titles": page_title,
-                "prop": "extlinks|info",
-                "ellimit": "500",
-                "format": "json",
-            })
-            api_url = f"https://imslp.org/api.php?{api_params}"
-            print(f"[IMSLP] Page: {api_url}")
+            import re as _re
+            # Scrape the actual IMSLP wiki page for file references
+            wiki_url = f"https://imslp.org/wiki/{urllib.parse.quote(page_title.replace(' ', '_'))}"
+            print(f"[IMSLP] Page: {wiki_url}")
 
             req = urllib.request.Request(
-                api_url,
+                wiki_url,
                 headers={"User-Agent": "SmartScore/2.0 (educational music app)"},
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
-                raw = json.loads(resp.read().decode("utf-8"))
+                html = resp.read().decode("utf-8", errors="replace")
 
-            pages = raw.get("query", {}).get("pages", {})
             files = []
-            for page_data in pages.values():
-                ext_links = page_data.get("extlinks", [])
-                for link in ext_links:
-                    url = link.get("*", "")
-                    lower_url = url.lower()
-                    if any(lower_url.endswith(ext) for ext in [".xml", ".musicxml", ".mxl", ".pdf"]):
-                        label = url.split("/")[-1]
-                        files.append({"url": url, "label": label})
+            seen = set()
+
+            # Find PMLP file references (PDF, XML, MIDI)
+            pmlp_files = _re.findall(
+                r'(PMLP\d+[A-Za-z0-9_\-\.]*\.(?:pdf|xml|musicxml|mxl|mid|midi))',
+                html, _re.IGNORECASE
+            )
+            for fname in pmlp_files:
+                if fname not in seen:
+                    seen.add(fname)
+                    ext = fname.rsplit(".", 1)[-1].lower()
+                    ftype = "pdf" if ext == "pdf" else ("midi" if ext in ("mid", "midi") else "musicxml")
+                    files.append({"label": fname, "type": ftype, "url": ""})
+
+            # Find direct download links
+            direct_links = _re.findall(
+                r'href="(https?://[^"]*(?:\.pdf|\.xml|\.musicxml|\.mxl|\.mid|\.midi)[^"]*)"',
+                html, _re.IGNORECASE
+            )
+            for url in direct_links:
+                label = url.split("/")[-1]
+                if label not in seen:
+                    seen.add(label)
+                    ext = label.rsplit(".", 1)[-1].lower()
+                    ftype = "pdf" if ext == "pdf" else ("midi" if ext in ("mid", "midi") else "musicxml")
+                    files.append({"label": label, "type": ftype, "url": url})
+
+            # Deduplicate and limit
+            unique_files = []
+            unique_labels = set()
+            for f in files:
+                short = f["label"][:60]
+                if short not in unique_labels:
+                    unique_labels.add(short)
+                    unique_files.append(f)
+                    if len(unique_files) >= 30:
+                        break
 
             self._json_response({
                 "title": page_title,
-                "files": files,
+                "files": unique_files,
+                "wiki_url": wiki_url,
             })
 
         except urllib.error.URLError as e:
