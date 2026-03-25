@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
@@ -17,6 +18,7 @@ class ScoreViewerScreen extends StatefulWidget {
 
 class _ScoreViewerScreenState extends State<ScoreViewerScreen> {
   String? _svgContent;
+  String? _renderedPngBase64;
   int _currentPage = 1;
   int _totalPages = 1;
   bool _loading = true;
@@ -44,13 +46,25 @@ class _ScoreViewerScreenState extends State<ScoreViewerScreen> {
     final xml = DemoData.getXml(widget.scoreId);
     if (xml == null) {
       setState(() {
-        _error = 'Score not found';
+        _error = 'Score not found. Please re-import.';
         _loading = false;
       });
       return;
     }
 
-    // Wait for Verovio to be ready (retry up to 60 times, 500ms each = 30s max)
+    // Check if we have a pre-rendered PNG (from LilyPond via OMR server)
+    final pngB64 = DemoData.getRenderedPng(widget.scoreId);
+    if (pngB64 != null) {
+      setState(() {
+        _renderedPngBase64 = pngB64;
+        _totalPages = 1;
+        _currentPage = 1;
+        _loading = false;
+      });
+      return;
+    }
+
+    // Use Verovio for demo scores
     for (int i = 0; i < 60; i++) {
       if (verovioIsReady()) break;
       await Future.delayed(const Duration(milliseconds: 500));
@@ -186,6 +200,31 @@ class _ScoreViewerScreenState extends State<ScoreViewerScreen> {
             ),
           ],
         ),
+      );
+    }
+
+    // Show pre-rendered PNG if available (from LilyPond)
+    if (_renderedPngBase64 != null) {
+      return Column(
+        children: [
+          Expanded(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Image.memory(
+                    base64Decode(_renderedPngBase64!),
+                    fit: BoxFit.fitWidth,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _buildPageIndicator(),
+          if (kIsWeb) _buildPlaybackBar(),
+        ],
       );
     }
 

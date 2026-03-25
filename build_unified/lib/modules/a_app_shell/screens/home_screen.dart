@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'dart:html' as html;
 
 import '../../../demo_data.dart';
+
+const String _omrServerUrl = 'http://58.29.21.11:5000';
 
 /// Home screen: shows demo scores and allows MusicXML file import.
 class HomeScreen extends StatefulWidget {
@@ -16,6 +20,69 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _importing = false;
+  String _loadingMessage = '';
+  double _loadingProgress = 0;
+
+  void _showLoadingDialog(String message) {
+    _loadingMessage = message;
+    _loadingProgress = 0;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          // Store setter for external updates
+          _dialogSetState = setDialogState;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: 56, height: 56,
+                  child: CircularProgressIndicator(
+                    value: _loadingProgress > 0 ? _loadingProgress : null,
+                    strokeWidth: 4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _loadingMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+                if (_loadingProgress > 0) ...[
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(value: _loadingProgress),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(_loadingProgress * 100).round()}%',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void Function(void Function())? _dialogSetState;
+
+  void _updateLoading(String message, double progress) {
+    _loadingMessage = message;
+    _loadingProgress = progress;
+    _dialogSetState?.call(() {});
+  }
+
+  void _closeLoadingDialog() {
+    _dialogSetState = null;
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
 
   Future<void> _importFile() async {
     if (!kIsWeb) return;
@@ -89,6 +156,130 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _captureCamera() async {
+    if (!kIsWeb) return;
+    setState(() => _importing = true);
+    try {
+      // Use capture attribute to open camera on mobile
+      final input = html.FileUploadInputElement()
+        ..accept = 'image/*'
+        ..setAttribute('capture', 'environment');
+      input.click();
+      await input.onChange.first;
+      final file = input.files?.first;
+      if (file == null) {
+        setState(() => _importing = false);
+        return;
+      }
+      await _processImageFile(file);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera error: $e')),
+        );
+        setState(() => _importing = false);
+      }
+    }
+  }
+
+  Future<void> _scanImage() async {
+    if (!kIsWeb) return;
+    setState(() => _importing = true);
+    try {
+      final input = html.FileUploadInputElement()
+        ..accept = 'image/*'
+        ..multiple = false;
+      input.click();
+      await input.onChange.first;
+      final file = input.files?.first;
+      if (file == null) {
+        setState(() => _importing = false);
+        return;
+      }
+      await _processImageFile(file);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Scan failed: $e'), duration: const Duration(seconds: 5)),
+        );
+        setState(() => _importing = false);
+      }
+    }
+  }
+
+  Future<void> _processImageFile(html.File file) async {
+    _showLoadingDialog('Preparing image...');
+    await Future.delayed(const Duration(milliseconds: 300));
+    _updateLoading('Uploading to AI server...', 0.1);
+
+    try {
+      final formData = html.FormData();
+      formData.appendBlob('image', file, file.name);
+
+      _updateLoading('AI is recognizing music notation...\nThis may take 30-60 seconds.', 0.2);
+
+      final request = html.HttpRequest();
+      request.open('POST', '$_omrServerUrl/omr');
+
+      // Progress simulation while waiting
+      var progress = 0.2;
+      final progressTimer = Timer.periodic(const Duration(seconds: 2), (t) {
+        progress = (progress + 0.05).clamp(0.0, 0.85);
+        final step = progress < 0.4 ? 'Detecting staff lines...'
+            : progress < 0.6 ? 'Recognizing notes and symbols...'
+            : progress < 0.8 ? 'Building music structure...'
+            : 'Generating MusicXML...';
+        _updateLoading(step, progress);
+      });
+
+      final completer = request.onLoad.first;
+      request.send(formData);
+      await completer;
+
+      progressTimer.cancel();
+      _updateLoading('Processing result...', 0.95);
+
+      if (request.status == 200) {
+        final response = jsonDecode(request.responseText ?? '{}');
+        if (response['success'] == true && response['musicxml'] != null) {
+          final musicXml = response['musicxml'] as String;
+          final title = file.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+          final pngBase64 = response['png_base64'] as String?;
+          final scoreId = DemoData.addImported(title, musicXml, pngBase64: pngBase64);
+
+          _updateLoading('Done!', 1.0);
+          await Future.delayed(const Duration(milliseconds: 500));
+          _closeLoadingDialog();
+
+          if (mounted) {
+            setState(() => _importing = false);
+            context.go('/viewer/$scoreId');
+          }
+          return;
+        } else {
+          throw Exception(response['error'] ?? 'OMR failed');
+        }
+      } else {
+        throw Exception('Server error: ${request.status}');
+      }
+    } catch (e) {
+      _closeLoadingDialog();
+      if (mounted) {
+        setState(() => _importing = false);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Recognition Failed'),
+            content: Text('$e\n\nTip: Try with a simpler, cleaner score image.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -124,15 +315,43 @@ class _HomeScreenState extends State<HomeScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : OutlinedButton.icon(
-                      onPressed: _importFile,
-                      icon: const Icon(Icons.upload_file, size: 18),
-                      label: const Text('Import MusicXML'),
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                  : PopupMenuButton<String>(
+                      icon: Icon(Icons.add, color: colorScheme.primary),
+                      tooltip: 'Import',
+                      onSelected: (value) {
+                        if (value == 'scan') _scanImage();
+                        if (value == 'camera') _captureCamera();
+                        if (value == 'xml') _importFile();
+                      },
+                      itemBuilder: (ctx) => [
+                        const PopupMenuItem(
+                          value: 'camera',
+                          child: ListTile(
+                            leading: Icon(Icons.camera_alt),
+                            title: Text('Take Photo'),
+                            subtitle: Text('Capture score with camera'),
+                            dense: true,
+                          ),
                         ),
-                      ),
+                        const PopupMenuItem(
+                          value: 'scan',
+                          child: ListTile(
+                            leading: Icon(Icons.image_search),
+                            title: Text('Scan Image'),
+                            subtitle: Text('Select image from gallery'),
+                            dense: true,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'xml',
+                          child: ListTile(
+                            leading: Icon(Icons.upload_file),
+                            title: Text('Import MusicXML'),
+                            subtitle: Text('Open .xml or .musicxml file'),
+                            dense: true,
+                          ),
+                        ),
+                      ],
                     ),
             ),
         ],

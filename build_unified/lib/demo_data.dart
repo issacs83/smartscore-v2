@@ -541,11 +541,19 @@ class DemoData {
   static final Map<String, Map<String, String>> _imported = {};
 
   /// Registers an imported MusicXML string and returns its generated id.
-  static String addImported(String title, String xml) {
+  static String addImported(String title, String xml, {String? pngBase64}) {
     final id = 'import_${_imported.length}';
     _imported[id] = {'title': title, 'xml': xml};
+    if (pngBase64 != null) {
+      _renderedImages[id] = pngBase64;
+    }
     return id;
   }
+
+  static final Map<String, String> _renderedImages = {};
+
+  /// Get rendered PNG (base64) for a score, if available
+  static String? getRenderedPng(String scoreId) => _renderedImages[scoreId];
 
   /// All entries visible on the home screen (demos + imports).
   static Map<String, Map<String, String>> get allScores => {
