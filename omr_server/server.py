@@ -330,11 +330,26 @@ class OMRHandler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self._json_response({"error": str(e)}, 500)
 
-    def _handle_corpus_search(self, params):
-        """Search the music21 built-in corpus."""
-        if not _music21_available:
-            self._json_response({"error": "music21 not installed", "results": []}, 503)
+    # Pre-cached corpus index for instant search
+    _corpus_index = None
+
+    @classmethod
+    def _load_corpus_index(cls):
+        """Load pre-built corpus index from file."""
+        if cls._corpus_index is not None:
             return
+        index_path = os.path.join(os.path.dirname(__file__), "corpus_index.json")
+        if os.path.exists(index_path):
+            with open(index_path) as f:
+                cls._corpus_index = json.load(f)
+            print(f"[Corpus] Loaded pre-built index: {len(cls._corpus_index)} entries")
+        else:
+            cls._corpus_index = []
+            print("[Corpus] No pre-built index found")
+
+    def _handle_corpus_search(self, params):
+        """Search the music21 built-in corpus (uses pre-cached index for speed)."""
+        OMRHandler._load_corpus_index()
 
         query_list = params.get("q", [])
         if not query_list:
@@ -344,6 +359,22 @@ class OMRHandler(BaseHTTPRequestHandler):
         query = query_list[0].strip()
         if not query:
             self._json_response({"error": "Empty query"}, 400)
+            return
+
+        # Fast search from pre-cached index
+        if OMRHandler._corpus_index:
+            q = query.lower()
+            results = [
+                e for e in OMRHandler._corpus_index
+                if q in e.get('title', '').lower()
+                or q in e.get('composer', '').lower()
+                or q in e.get('id', '').lower()
+            ][:30]
+            self._json_response({"results": results, "query": query, "total": len(results)})
+            return
+
+        if not _music21_available:
+            self._json_response({"error": "music21 not installed", "results": []}, 503)
             return
 
         try:
