@@ -14,6 +14,15 @@ API:
 
   GET /health
     Returns: { "status": "ready", "engine": "homr" }
+
+  GET /corpus/search?q=<query>
+    Returns: { "results": [{"id": "...", "title": "...", "composer": "...", "parts": N}] }
+
+  GET /corpus/export?id=<score_id>
+    Returns: { "musicxml": "<xml>...", "title": "...", "success": true }
+
+  GET /corpus/stats
+    Returns: { "total": 15026, "composers": {"bach": 564, ...} }
 """
 
 import argparse
@@ -28,6 +37,16 @@ import cgi
 import urllib.request
 import urllib.parse
 import urllib.error
+
+# Try to import music21 for corpus browsing
+_music21_available = False
+try:
+    import music21
+    _music21_available = True
+    print("[Corpus] music21 loaded successfully")
+except ImportError as e:
+    print(f"[Corpus] music21 not available: {e}")
+    print("[Corpus] Install with: pip3 install music21")
 
 # Try to import homr
 _homr_available = False
@@ -76,6 +95,12 @@ class OMRHandler(BaseHTTPRequestHandler):
             self._handle_imslp_download(params)
         elif parsed.path == "/imslp/download_binary":
             self._handle_imslp_download_binary(params)
+        elif parsed.path == "/corpus/search":
+            self._handle_corpus_search(params)
+        elif parsed.path == "/corpus/export":
+            self._handle_corpus_export(params)
+        elif parsed.path == "/corpus/stats":
+            self._handle_corpus_stats()
         else:
             self._json_response({"error": "Not found"}, 404)
 
@@ -301,6 +326,160 @@ class OMRHandler(BaseHTTPRequestHandler):
         except urllib.error.URLError as e:
             print(f"[IMSLP] Binary download error: {e}")
             self._json_response({"error": f"Download failed: {e}"}, 502)
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e)}, 500)
+
+    def _handle_corpus_search(self, params):
+        """Search the music21 built-in corpus."""
+        if not _music21_available:
+            self._json_response({"error": "music21 not installed", "results": []}, 503)
+            return
+
+        query_list = params.get("q", [])
+        if not query_list:
+            self._json_response({"error": "Missing query parameter 'q'"}, 400)
+            return
+
+        query = query_list[0].strip()
+        if not query:
+            self._json_response({"error": "Empty query"}, 400)
+            return
+
+        try:
+            print(f"[Corpus] Search: {query}")
+            search_results = music21.corpus.search(query)
+            results = []
+            for r in search_results[:30]:
+                source_path = str(r.sourcePath) if r.sourcePath else ""
+                # Build a human-readable ID from the path
+                score_id = source_path.replace("\\", "/")
+                # Strip the music21 corpus prefix if present
+                for prefix in ["/music21/corpus/", "music21/corpus/"]:
+                    if prefix in score_id:
+                        score_id = score_id.split(prefix, 1)[-1]
+                        break
+                # Extract title and composer from metadata
+                title = ""
+                composer = ""
+                try:
+                    if r.metadata:
+                        title = r.metadata.title or ""
+                        composer = r.metadata.composer or ""
+                except Exception:
+                    pass
+                if not title:
+                    title = score_id.split("/")[-1].replace(".xml", "").replace(".mxl", "")
+                results.append({
+                    "id": score_id,
+                    "title": title,
+                    "composer": composer,
+                    "parts": 0,  # populated on export to avoid loading all scores
+                })
+
+            self._json_response({"results": results, "query": query, "total": len(search_results)})
+
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e)}, 500)
+
+    def _handle_corpus_export(self, params):
+        """Export a music21 corpus score as MusicXML."""
+        if not _music21_available:
+            self._json_response({"error": "music21 not installed", "success": False}, 503)
+            return
+
+        id_list = params.get("id", [])
+        if not id_list:
+            self._json_response({"error": "Missing parameter 'id'", "success": False}, 400)
+            return
+
+        score_id = id_list[0].strip()
+        if not score_id:
+            self._json_response({"error": "Empty score id", "success": False}, 400)
+            return
+
+        # Validate: only allow alphanumeric, slashes, dashes, dots, underscores
+        import re as _re
+        if not _re.match(r'^[\w\-./]+$', score_id):
+            self._json_response({"error": "Invalid score id", "success": False}, 400)
+            return
+
+        try:
+            print(f"[Corpus] Export: {score_id}")
+            score = music21.corpus.parse(score_id)
+
+            # Write to a temp file then read back
+            with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                score.write("musicxml", fp=tmp_path)
+                with open(tmp_path, "r", encoding="utf-8", errors="replace") as f:
+                    xml_content = f.read()
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+            # Extract title and part count from the score object
+            title = ""
+            part_count = 0
+            try:
+                if score.metadata:
+                    title = score.metadata.title or ""
+                flat_parts = score.parts
+                part_count = len(flat_parts) if flat_parts else 0
+            except Exception:
+                pass
+            if not title:
+                title = score_id.split("/")[-1].replace(".xml", "").replace(".mxl", "")
+
+            self._json_response({
+                "musicxml": xml_content,
+                "title": title,
+                "parts": part_count,
+                "success": True,
+            })
+
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e), "success": False}, 500)
+
+    def _handle_corpus_stats(self):
+        """Return statistics about the music21 corpus."""
+        if not _music21_available:
+            self._json_response({"error": "music21 not installed"}, 503)
+            return
+
+        try:
+            # Well-known composers in the corpus — counts are approximate
+            known_composers = {
+                "bach": "bach",
+                "beethoven": "beethoven",
+                "mozart": "mozart",
+                "haydn": "haydn",
+                "schubert": "schubert",
+                "handel": "handel",
+                "monteverdi": "monteverdi",
+                "palestrina": "palestrina",
+                "ravel": "ravel",
+                "luca": "luca",
+            }
+            composer_counts = {}
+            for display_name, query in known_composers.items():
+                try:
+                    results = music21.corpus.search(query)
+                    if len(results) > 0:
+                        composer_counts[display_name] = len(results)
+                except Exception:
+                    pass
+
+            self._json_response({
+                "total": 15026,
+                "composers": composer_counts,
+                "available": True,
+            })
+
         except Exception as e:
             traceback.print_exc()
             self._json_response({"error": str(e)}, 500)

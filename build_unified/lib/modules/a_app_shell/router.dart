@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'config.dart';
 import 'screens/home_screen.dart';
+import 'screens/corpus_screen.dart';
 import 'screens/imslp_screen.dart';
 import 'screens/score_viewer_screen.dart';
 import 'screens/settings_screen.dart';
@@ -59,6 +60,13 @@ GoRouter createRouter() {
             name: 'camera',
             pageBuilder: (context, state) {
               return const MaterialPage(child: CaptureScreen());
+            },
+          ),
+          GoRoute(
+            path: 'corpus',
+            name: 'corpus',
+            pageBuilder: (context, state) {
+              return const MaterialPage(child: CorpusScreen());
             },
           ),
           GoRoute(

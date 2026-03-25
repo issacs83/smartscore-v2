@@ -322,9 +322,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (value == 'scan') _scanImage();
                         if (value == 'camera') _captureCamera();
                         if (value == 'xml') _importFile();
+                        if (value == 'corpus') context.go('/corpus');
                         if (value == 'imslp') context.go('/imslp');
                       },
                       itemBuilder: (ctx) => [
+                        const PopupMenuItem(
+                          value: 'corpus',
+                          child: ListTile(
+                            leading: Icon(Icons.menu_book),
+                            title: Text('Browse Library (15K+ scores)'),
+                            subtitle: Text('Built-in corpus — 100% accurate'),
+                            dense: true,
+                          ),
+                        ),
+                        const PopupMenuDivider(),
                         const PopupMenuItem(
                           value: 'camera',
                           child: ListTile(
@@ -372,6 +383,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _CorpusBanner(onTap: () => context.go('/corpus')),
+              const SizedBox(height: 16),
               Text(
                 'Scores',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -493,6 +506,61 @@ class _ScoreCard extends StatelessWidget {
               child: const Text('Open'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Prominent banner for the built-in corpus browser.
+class _CorpusBanner extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CorpusBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colorScheme.primaryContainer,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.menu_book, color: colorScheme.primary, size: 32),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Browse Library (15,026 scores)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Bach, Beethoven, Mozart and more — 100% accurate MusicXML',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onPrimaryContainer.withOpacity(0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: colorScheme.primary),
+            ],
+          ),
         ),
       ),
     );
