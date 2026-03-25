@@ -384,36 +384,32 @@ double _pitchToStaffY(
   int staffIndex,
   LayoutConfig config,
 ) {
-  // MIDI values: C=0, D=2, E=4, F=5, G=7, A=9, B=11
-  final stepValues = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11};
-  final midiNote = (octave + 1) * 12 + (stepValues[step] ?? 0);
+  // Diatonic step index within an octave (C=0, D=1, E=2, F=3, G=4, A=5, B=6)
+  final diatonicSteps = {'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6};
+  final noteStep = diatonicSteps[step] ?? 0;
 
-  // Determine reference MIDI for bottom line based on clef
-  int referenceLineMidi;
+  // Total diatonic position from C0 (absolute diatonic index)
+  final notePos = octave * 7 + noteStep;
 
+  // Reference: bottom line of staff in diatonic position
+  // Treble clef: bottom line = E4 = 4*7+2 = 30
+  // Bass clef: bottom line = G2 = 2*7+4 = 18
+  int referencePos;
   if (clefType == 'treble') {
-    referenceLineMidi = 52; // E4
+    referencePos = 30; // E4
   } else if (clefType == 'bass') {
-    referenceLineMidi = 43; // G2
+    referencePos = 18; // G2
   } else if (clefType == 'alto') {
-    referenceLineMidi = 48; // C4
+    referencePos = 24; // B3 (middle line = C4)
   } else if (clefType == 'tenor') {
-    referenceLineMidi = 45; // A3
+    referencePos = 22; // A3
   } else {
-    // Grand staff: use treble for upper staff, bass for lower
-    if (staffIndex == 0) {
-      referenceLineMidi = 52; // E4 treble
-    } else {
-      referenceLineMidi = 43; // G2 bass
-    }
+    referencePos = (staffIndex == 0) ? 30 : 18;
   }
 
-  // Calculate semitones from reference line
-  final semitoneDistance = referenceLineMidi - midiNote;
-
-  // Each staff line/space is a whole step (2 semitones)
-  // Bottom line is Y=0, moving up is negative Y
-  final lineDistance = semitoneDistance / 2.0;
+  // Distance in diatonic steps from bottom line
+  // Positive = above bottom line, negative = below
+  final stepsFromBottom = (notePos - referencePos).toDouble();
 
   // Build staves to get Y origin
   final staves = _buildStaves(clefType, 0, config);
@@ -421,9 +417,11 @@ double _pitchToStaffY(
 
   final stave = staves[staffIndex];
   final staffBottomY = stave.bounds.y + config.staffHeight;
-  final staffLineSpacing = config.staffLineSpacing;
+  final halfSpacing = config.staffLineSpacing / 2.0;
 
-  return staffBottomY - (lineDistance * staffLineSpacing);
+  // Each diatonic step = half a staff line spacing
+  // Moving up = negative Y (screen coordinates)
+  return staffBottomY - (stepsFromBottom * halfSpacing);
 }
 
 /// Get total number of pages

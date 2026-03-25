@@ -449,10 +449,10 @@ class MusicXmlParser {
   }
 
   String _fifthsToKeyStep(int fifths) {
-    const majorKeys = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb'];
-    const majorIndex = 7;
-
-    final index = majorIndex + fifths;
+    // fifths: -7=Cb, -6=Gb, ... -1=F, 0=C, 1=G, 2=D, ... 7=C#
+    const majorKeys = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+    // Index 7 = C (fifths=0), so offset = 7 + fifths
+    final index = 7 + fifths;
     if (index >= 0 && index < majorKeys.length) {
       return majorKeys[index];
     }

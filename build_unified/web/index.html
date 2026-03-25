@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="smartscore_build">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>SmartScore</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Verovio music engraving engine (pure JS, no WASM) -->
+  <script src="verovio-toolkit.js"></script>
+  <!-- Tone.js for Web Audio synthesis (MIDI playback) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <style>
+    #verovio-output { display: none; }
+  </style>
+</head>
+<body>
+  <div id="verovio-output"></div>
+  <script>
+    // Global Verovio toolkit - loaded once, used by Flutter via JS interop
+    window.verovioToolkit = null;
+    window.verovioReady = false;
+    window.verovioCurrentPage = 1;
+    window.verovioTotalPages = 0;
+
+    function initVerovio() {
+      try {
+        if (typeof verovio !== 'undefined' && verovio.toolkit) {
+          window.verovioToolkit = new verovio.toolkit();
+          window.verovioReady = true;
+          console.log('[Verovio] Pure JS engine ready');
+        } else if (typeof verovio !== 'undefined' && verovio.module) {
+          // WASM version fallback
+          verovio.module.onRuntimeInitialized = function() {
+            window.verovioToolkit = new verovio.toolkit();
+            window.verovioReady = true;
+            console.log('[Verovio] WASM engine ready');
+          };
+        } else {
+          console.log('[Verovio] Not loaded yet, retrying...');
+          setTimeout(initVerovio, 500);
+        }
+      } catch(e) {
+        console.error('[Verovio] Init error:', e);
+        setTimeout(initVerovio, 1000);
+      }
+    }
+
+    // Start loading after script is parsed
+    setTimeout(initVerovio, 200);
+
+    // API for Flutter to call
+    window.verovioLoadScore = function(musicXml) {
+      if (!window.verovioToolkit) return '<p>Verovio not ready</p>';
+      var w = window.innerWidth || 400;
+      var scale = 35;
+      window.verovioToolkit.setOptions({
+        scale: scale,
+        pageWidth: Math.round(w * 100 / scale),
+        adjustPageHeight: true,
+        header: 'none',
+        footer: 'none',
+        breaks: 'auto',
+        svgViewBox: true
+      });
+      window.verovioToolkit.loadData(musicXml);
+      window.verovioTotalPages = window.verovioToolkit.getPageCount();
+      window.verovioCurrentPage = 1;
+      return window.verovioToolkit.renderToSVG(1);
+    };
+
+    window.verovioRenderPage = function(page) {
+      if (!window.verovioToolkit) return '';
+      window.verovioCurrentPage = page;
+      return window.verovioToolkit.renderToSVG(page);
+    };
+
+    window.verovioGetPageCount = function() {
+      return window.verovioTotalPages || 0;
+    };
+
+    window.verovioIsReady = function() {
+      return window.verovioReady === true;
+    };
+
+    // ── MIDI export helpers ──────────────────────────────────────────────────
+
+    window.verovioGetMidi = function() {
+      if (!window.verovioToolkit) return '';
+      try {
+        return window.verovioToolkit.renderToMIDI();
+      } catch(e) {
+        console.error('[Verovio] renderToMIDI error:', e);
+        return '';
+      }
+    };
+
+    window.verovioGetTimemap = function() {
+      if (!window.verovioToolkit) return '[]';
+      try {
+        return JSON.stringify(window.verovioToolkit.renderToTimemap());
+      } catch(e) {
+        console.error('[Verovio] renderToTimemap error:', e);
+        return '[]';
+      }
+    };
+
+    // ── Playback state ───────────────────────────────────────────────────────
+
+    window._playbackSynth    = null;
+    window._playbackPart     = null;
+    window._playbackTempo    = 120;
+    window._playbackStarted  = false;
+
+    window._pianoSamplerReady = true; // FM synth is always ready
+
+    function _ensureSynth() {
+      if (window._playbackSynth) return;
+      // Use FM synthesis piano — works instantly, no CDN dependency
+      console.log('[Playback] Creating FM piano synth');
+      window._playbackSynth = new Tone.PolySynth(Tone.FMSynth, {
+        maxPolyphony: 8,
+        voice: Tone.FMSynth,
+        options: {
+          harmonicity: 3.01,
+          modulationIndex: 14,
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.002, decay: 0.5, sustain: 0.1, release: 1.5 },
+          modulation: { type: 'square' },
+          modulationEnvelope: { attack: 0.002, decay: 0.2, sustain: 0, release: 0.5 }
+        }
+      }).toDestination();
+      window._playbackSynth.volume.value = -6; // slightly quieter
+    }
+
+    // Convert Verovio timemap entry to Tone.js note name (e.g. "C4")
+    function _midiPitchToNoteName(midi) {
+      var notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      var octave = Math.floor(midi / 12) - 1;
+      var name   = notes[midi % 12];
+      return name + octave;
+    }
+
+    window.verovioPlay = function() {
+      if (!window.verovioToolkit) { console.error('[Play] No toolkit'); return; }
+      _ensureSynth();
+
+      // Start audio context (MUST be in user gesture handler)
+      Tone.start();
+      console.log('[Play] Audio context starting...');
+
+      // Stop any existing playback
+      if (window._playbackPart) {
+        window._playbackPart.stop();
+        window._playbackPart.dispose();
+        window._playbackPart = null;
+      }
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      Tone.Transport.position = 0;
+
+      // Get timemap from Verovio
+      var timemap;
+      try {
+        timemap = window.verovioToolkit.renderToTimemap();
+        console.log('[Play] Timemap entries:', timemap.length);
+        if (timemap.length > 0) {
+          console.log('[Play] First entry:', JSON.stringify(timemap[0]));
+          console.log('[Play] Second entry:', JSON.stringify(timemap[1]));
+        }
+      } catch(e) {
+        console.error('[Play] renderToTimemap failed:', e);
+        return;
+      }
+
+      // Parse timemap — Verovio format: {tstamp: ms, on: ["noteId",...], off: ["noteId",...], tempo: N}
+      // We need to extract MIDI pitch from the note IDs using getMIDIValuesForElement
+      var noteEvents = [];
+      var activeNotes = {}; // noteId -> {startSec, pitch}
+      var tempoScale = 120.0 / window._playbackTempo;
+
+      timemap.forEach(function(entry) {
+        var timeSec = (entry.tstamp / 1000.0) * tempoScale;
+
+        // "on" contains note element IDs (strings like "note-0000001234")
+        if (entry.on) {
+          entry.on.forEach(function(noteId) {
+            // Try to get MIDI pitch from Verovio
+            var midi = 60; // default C4
+            try {
+              var midiValues = window.verovioToolkit.getMIDIValuesForElement(noteId);
+              if (midiValues && midiValues.pitch !== undefined) {
+                midi = midiValues.pitch;
+              }
+            } catch(e) {
+              // getMIDIValuesForElement may not exist in all versions
+            }
+            activeNotes[noteId] = { startSec: timeSec, pitch: midi };
+          });
+        }
+
+        if (entry.off) {
+          entry.off.forEach(function(noteId) {
+            var info = activeNotes[noteId];
+            if (info) {
+              var durSec = Math.max(0.1, timeSec - info.startSec);
+              noteEvents.push({
+                time: info.startSec,
+                note: _midiPitchToNoteName(info.pitch),
+                duration: durSec
+              });
+              delete activeNotes[noteId];
+            }
+          });
+        }
+      });
+
+      console.log('[Play] Note events built:', noteEvents.length);
+
+      // Fallback: if no events from timemap, generate from score directly
+      if (noteEvents.length === 0) {
+        console.warn('[Play] No events from timemap, using simple sequential playback');
+        // Generate simple note sequence from the rendered score
+        // Use Verovio's getElementsAtTime as a workaround
+        var totalTime = 0;
+        timemap.forEach(function(entry, i) {
+          if (entry.on && entry.on.length > 0) {
+            var timeSec = (entry.tstamp / 1000.0) * tempoScale;
+            // Use middle C range as default
+            var pitchGuess = 60 + (i % 12);
+            var nextTime = (i + 1 < timemap.length) ?
+              (timemap[i+1].tstamp / 1000.0) * tempoScale : timeSec + 0.5;
+            var dur = Math.max(0.1, nextTime - timeSec);
+            noteEvents.push({
+              time: timeSec,
+              note: _midiPitchToNoteName(pitchGuess),
+              duration: dur
+            });
+            totalTime = Math.max(totalTime, timeSec + dur);
+          }
+        });
+        console.log('[Play] Fallback events:', noteEvents.length);
+      }
+
+      if (noteEvents.length === 0) {
+        console.error('[Play] Still no note events! Cannot play.');
+        // Play a test tone to verify audio works
+        window._playbackSynth.triggerAttackRelease('C4', '8n');
+        return;
+      }
+
+      Tone.Transport.bpm.value = 120; // Use fixed BPM, timing is in seconds
+
+      window._playbackPart = new Tone.Part(function(time, event) {
+        window._playbackSynth.triggerAttackRelease(event.note, event.duration, time);
+      }, noteEvents.map(function(e) {
+        return [e.time, { note: e.note, duration: e.duration }];
+      }));
+
+      window._playbackPart.start(0);
+      Tone.Transport.start();
+      window._playbackStarted = true;
+      console.log('[Play] Started with', noteEvents.length, 'notes');
+    };
+
+    window.verovioStop = function() {
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      if (window._playbackPart) {
+        window._playbackPart.stop();
+        window._playbackPart.dispose();
+        window._playbackPart = null;
+      }
+      window._playbackStarted = false;
+      console.log('[Playback] Stopped');
+    };
+
+    window.verovioPause = function() {
+      if (Tone.Transport.state === 'started') {
+        Tone.Transport.pause();
+        console.log('[Playback] Paused');
+      } else if (Tone.Transport.state === 'paused') {
+        Tone.Transport.start();
+        console.log('[Playback] Resumed');
+      }
+    };
+
+    window.verovioSetTempo = function(bpm) {
+      window._playbackTempo = bpm;
+      Tone.Transport.bpm.value = bpm;
+      console.log('[Playback] Tempo set to', bpm, 'BPM');
+    };
+
+    window.verovioGetPlaybackState = function() {
+      return Tone.Transport.state; // 'started' | 'paused' | 'stopped'
+    };
+  </script>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' if (dart.library.js_interop) 'io_stub.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'import_error.dart';
 import 'import_validators.dart';
 import 'logger.dart';
@@ -28,7 +29,7 @@ class ScoreLibrary {
   final Map<String, ScoreEntry> _store = {};
   final ModuleLogger _logger = ModuleLogger.instance;
 
-  late final Directory _versionsDir;
+  Directory? _versionsDir;
 
   ScoreLibrary(this.basePath);
 
@@ -37,9 +38,12 @@ class ScoreLibrary {
     _logger.info(_module, 'Initializing library', data: {'basePath': basePath});
 
     try {
-      _versionsDir = Directory('$basePath/versions');
-      if (!await _versionsDir.exists()) {
-        await _versionsDir.create(recursive: true);
+      // Skip directory creation on web platform
+      if (!kIsWeb) {
+        _versionsDir = Directory('$basePath/versions');
+        if (!await _versionsDir!.exists()) {
+          await _versionsDir!.create(recursive: true);
+        }
       }
       _logger.info(_module, 'Library initialized successfully');
     } catch (e) {
@@ -277,7 +281,7 @@ class ScoreLibrary {
       }
 
       // Delete all version files
-      final scoreDir = Directory('${_versionsDir.path}/$id');
+      final scoreDir = Directory('${_versionsDir!.path}/$id');
       if (await scoreDir.exists()) {
         await scoreDir.delete(recursive: true);
       }
@@ -364,14 +368,22 @@ class ScoreLibrary {
   /// Gets the full path for a version file.
   String _getVersionPath(String scoreId, VersionType type) {
     final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
-    return '${_versionsDir.path}/$scoreId/${type.label}_$timestamp${type.fileExtension}';
+    return '${_versionsDir!.path}/$scoreId/${type.label}_$timestamp${type.fileExtension}';
   }
 
-  /// Writes version file to disk.
+  /// Writes version file to disk (skips on web).
   Future<void> _writeVersionFile(VersionInfo info, List<int> data) async {
+    if (kIsWeb) return; // Web: skip file I/O, data stays in memory
     final file = File(info.filePath);
     await file.parent.create(recursive: true);
     await file.writeAsBytes(data);
+  }
+
+  /// Import MusicXML from a raw string with a title.
+  Future<Result<ScoreEntry, ImportError>> importMusicXmlFromString(
+    String content, String title,
+  ) async {
+    return importMusicXml(content, fileName: '$title.xml');
   }
 
   /// Generates a placeholder Score JSON from MusicXML.
