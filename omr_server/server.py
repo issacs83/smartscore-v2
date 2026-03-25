@@ -725,7 +725,7 @@ class OMRHandler(BaseHTTPRequestHandler):
             # LilyPond → PNG
             result = subprocess.run(
                 ["lilypond", "--png", "-dresolution=150", ly_path],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, timeout=180,
                 cwd=os.path.dirname(ly_path) or "/tmp"
             )
 

@@ -147,22 +147,77 @@ class _CorpusScreenState extends State<CorpusScreen> {
     _search(value);
   }
 
+  String _exportMessage = '';
+  double _exportProgress = 0;
+  void Function(void Function())? _exportDialogSetState;
+
   Future<void> _importScore(CorpusResult result) async {
     if (!mounted) return;
+
+    _exportMessage = 'Preparing...';
+    _exportProgress = 0;
 
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const _LoadingDialog(message: 'Loading score from corpus...'),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          _exportDialogSetState = setDialogState;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: 56, height: 56,
+                  child: CircularProgressIndicator(
+                    value: _exportProgress > 0 ? _exportProgress : null,
+                    strokeWidth: 4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(_exportMessage, textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(value: _exportProgress),
+                const SizedBox(height: 4),
+                Text('${(_exportProgress * 100).round()}%',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            ),
+          );
+        },
+      ),
     );
 
+    void updateProgress(String msg, double pct) {
+      _exportMessage = msg;
+      _exportProgress = pct;
+      _exportDialogSetState?.call(() {});
+    }
+
     try {
+      updateProgress('Parsing score...', 0.1);
       final encodedId = Uri.encodeQueryComponent(result.id);
       final url = '$_omrServerUrl/corpus/export?id=$encodedId';
+
+      updateProgress('Exporting MusicXML...', 0.2);
 
       final request = html.HttpRequest();
       request.open('GET', url);
       request.setRequestHeader('Accept', 'application/json');
+
+      // Progress simulation
+      final progressTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (_exportProgress < 0.85) {
+          final step = _exportProgress < 0.4 ? 'Converting to LilyPond...'
+              : _exportProgress < 0.6 ? 'Rendering notation...'
+              : _exportProgress < 0.8 ? 'Generating PNG...'
+              : 'Almost done...';
+          updateProgress(step, _exportProgress + 0.08);
+        }
+      });
 
       final completer = Completer<void>();
       request.onLoad.listen((_) => completer.complete());
@@ -170,8 +225,13 @@ class _CorpusScreenState extends State<CorpusScreen> {
       request.send();
 
       await completer.future;
+      progressTimer.cancel();
+
+      updateProgress('Done!', 1.0);
+      await Future.delayed(const Duration(milliseconds: 300));
 
       if (!mounted) return;
+      _exportDialogSetState = null;
       Navigator.of(context, rootNavigator: true).pop();
 
       if (request.status == 200) {
@@ -193,14 +253,17 @@ class _CorpusScreenState extends State<CorpusScreen> {
         throw Exception('Server returned ${request.status}');
       }
     } catch (e) {
+      _exportDialogSetState = null;
       if (!mounted) return;
       if (Navigator.of(context, rootNavigator: true).canPop()) {
         Navigator.of(context, rootNavigator: true).pop();
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Import failed: $e'),
-          duration: const Duration(seconds: 5),
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('$e\n\nTry a smaller score (e.g. Bach BWV chorales).'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
         ),
       );
     }
