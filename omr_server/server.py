@@ -74,6 +74,8 @@ class OMRHandler(BaseHTTPRequestHandler):
             self._handle_imslp_page(params)
         elif parsed.path == "/imslp/download":
             self._handle_imslp_download(params)
+        elif parsed.path == "/imslp/download_binary":
+            self._handle_imslp_download_binary(params)
         else:
             self._json_response({"error": "Not found"}, 404)
 
@@ -219,8 +221,11 @@ class OMRHandler(BaseHTTPRequestHandler):
             return
 
         lower_url = file_url.lower()
-        if not any(lower_url.endswith(ext) for ext in [".xml", ".musicxml", ".mxl"]):
-            self._json_response({"error": "Only MusicXML files (.xml, .musicxml, .mxl) can be downloaded"}, 400)
+        allowed_exts = [".xml", ".musicxml", ".mxl", ".pdf", ".mid", ".midi"]
+        if not any(lower_url.endswith(ext) for ext in allowed_exts):
+            self._json_response(
+                {"error": "Only MusicXML, PDF, or MIDI files can be downloaded"}, 400
+            )
             return
 
         try:
@@ -242,6 +247,59 @@ class OMRHandler(BaseHTTPRequestHandler):
 
         except urllib.error.URLError as e:
             print(f"[IMSLP] Download error: {e}")
+            self._json_response({"error": f"Download failed: {e}"}, 502)
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e)}, 500)
+
+    def _handle_imslp_download_binary(self, params):
+        """Download any allowed file type from IMSLP, return as base64 JSON."""
+        import base64
+        url_list = params.get("url", [])
+        if not url_list:
+            self._json_response({"error": "Missing parameter 'url'"}, 400)
+            return
+
+        file_url = url_list[0].strip()
+        parsed_file_url = urllib.parse.urlparse(file_url)
+        allowed_hosts = {"imslp.org", "www.imslp.org", "imslp.simssa.ca", "petruccimusiclibrary.org"}
+        if parsed_file_url.netloc not in allowed_hosts:
+            self._json_response({"error": "URL not allowed: must be from imslp.org"}, 403)
+            return
+
+        filename = file_url.split("/")[-1].split("?")[0] or "file"
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+        ext_to_type = {
+            "xml": "musicxml", "musicxml": "musicxml", "mxl": "musicxml",
+            "pdf": "pdf",
+            "mid": "midi", "midi": "midi",
+        }
+        file_type = ext_to_type.get(ext)
+        if not file_type:
+            self._json_response(
+                {"error": "Only MusicXML (.xml/.mxl), PDF (.pdf), or MIDI (.mid/.midi) files are allowed"}, 400
+            )
+            return
+
+        try:
+            print(f"[IMSLP] Binary download ({file_type}): {file_url}")
+            req = urllib.request.Request(
+                file_url,
+                headers={"User-Agent": "SmartScore/2.0 (educational music app)"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw_bytes = resp.read()
+
+            data_b64 = base64.b64encode(raw_bytes).decode("ascii")
+            self._json_response({
+                "data_base64": data_b64,
+                "filename": filename,
+                "type": file_type,
+            })
+
+        except urllib.error.URLError as e:
+            print(f"[IMSLP] Binary download error: {e}")
             self._json_response({"error": f"Download failed: {e}"}, 502)
         except Exception as e:
             traceback.print_exc()

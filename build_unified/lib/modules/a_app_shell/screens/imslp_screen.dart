@@ -39,7 +39,7 @@ class ImslpResult {
 class ImslpFile {
   final String label;
   final String url;
-  final String fileType; // 'xml', 'pdf', 'other'
+  final String fileType; // 'musicxml', 'pdf', 'midi', 'other'
 
   const ImslpFile({
     required this.label,
@@ -437,20 +437,27 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
           final m = e as Map<String, dynamic>;
           final fileUrl = m['url'] as String? ?? '';
           final label = m['label'] as String? ?? fileUrl;
-          final ext = fileUrl.toLowerCase();
-          String fileType = 'other';
-          if (ext.contains('.xml') || ext.contains('musicxml')) {
-            fileType = 'xml';
-          } else if (ext.contains('.pdf')) {
-            fileType = 'pdf';
+          // Prefer server-provided type field; fall back to URL extension
+          String fileType = m['type'] as String? ?? '';
+          if (fileType.isEmpty) {
+            final ext = fileUrl.toLowerCase();
+            if (ext.contains('.xml') || ext.contains('musicxml') || ext.contains('.mxl')) {
+              fileType = 'musicxml';
+            } else if (ext.contains('.pdf')) {
+              fileType = 'pdf';
+            } else if (ext.contains('.mid')) {
+              fileType = 'midi';
+            } else {
+              fileType = 'other';
+            }
           }
           return ImslpFile(label: label, url: fileUrl, fileType: fileType);
         }).toList();
 
-        // Sort: MusicXML first, then PDF, then others
+        // Sort: MusicXML first, then PDF, then MIDI, then others
         files.sort((a, b) {
-          const order = {'xml': 0, 'pdf': 1, 'other': 2};
-          return (order[a.fileType] ?? 2).compareTo(order[b.fileType] ?? 2);
+          const order = {'musicxml': 0, 'pdf': 1, 'midi': 2, 'other': 3};
+          return (order[a.fileType] ?? 3).compareTo(order[b.fileType] ?? 3);
         });
 
         if (mounted) {
@@ -472,17 +479,27 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
     }
   }
 
-  Future<void> _downloadAndImport(ImslpFile file) async {
-    if (file.fileType != 'xml') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Only MusicXML files can be imported into SmartScore'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
+  Future<void> _handleFileAction(ImslpFile file) async {
+    switch (file.fileType) {
+      case 'musicxml':
+        await _importMusicXml(file);
+      case 'pdf':
+        _openInBrowser(file);
+      case 'midi':
+        _openInBrowser(file);
+      default:
+        _openInBrowser(file);
     }
+  }
 
+  void _openInBrowser(ImslpFile file) {
+    final url = file.url.isNotEmpty
+        ? file.url
+        : 'https://imslp.org/wiki/${Uri.encodeComponent(widget.result.pageTitle)}';
+    html.window.open(url, '_blank');
+  }
+
+  Future<void> _importMusicXml(ImslpFile file) async {
     setState(() => _downloadingUrl = file.url);
 
     try {
@@ -615,7 +632,7 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
         ..._files.map((file) => _FileCard(
               file: file,
               isDownloading: _downloadingUrl == file.url,
-              onDownload: () => _downloadAndImport(file),
+              onAction: () => _handleFileAction(file),
             )),
       ],
     );
@@ -625,37 +642,52 @@ class _ImslpPageDetailState extends State<_ImslpPageDetail> {
 class _FileCard extends StatelessWidget {
   final ImslpFile file;
   final bool isDownloading;
-  final VoidCallback onDownload;
+  final VoidCallback onAction;
 
   const _FileCard({
     required this.file,
     required this.isDownloading,
-    required this.onDownload,
+    required this.onAction,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isXml = file.fileType == 'xml';
+    final isMusicXml = file.fileType == 'musicxml';
     final isPdf = file.fileType == 'pdf';
+    final isMidi = file.fileType == 'midi';
 
-    final iconData = isXml
-        ? Icons.text_snippet
-        : isPdf
-            ? Icons.picture_as_pdf
-            : Icons.insert_drive_file;
+    final IconData iconData;
+    final Color iconColor;
+    final Color badgeColor;
+    if (isMusicXml) {
+      iconData = Icons.description;
+      iconColor = colorScheme.primary;
+      badgeColor = colorScheme.primaryContainer;
+    } else if (isPdf) {
+      iconData = Icons.picture_as_pdf;
+      iconColor = Colors.red.shade600;
+      badgeColor = Colors.red.shade50;
+    } else if (isMidi) {
+      iconData = Icons.music_note;
+      iconColor = Colors.green.shade700;
+      badgeColor = Colors.green.shade50;
+    } else {
+      iconData = Icons.insert_drive_file;
+      iconColor = Colors.grey.shade600;
+      badgeColor = Colors.grey.shade100;
+    }
 
-    final iconColor = isXml
-        ? colorScheme.primary
-        : isPdf
-            ? Colors.red.shade600
-            : Colors.grey.shade600;
-
-    final badgeColor = isXml
-        ? colorScheme.primaryContainer
-        : isPdf
-            ? Colors.red.shade50
-            : Colors.grey.shade100;
+    final String badgeLabel;
+    if (isMusicXml) {
+      badgeLabel = 'MUSICXML';
+    } else if (isPdf) {
+      badgeLabel = 'PDF';
+    } else if (isMidi) {
+      badgeLabel = 'MIDI';
+    } else {
+      badgeLabel = file.fileType.toUpperCase();
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -690,7 +722,7 @@ class _FileCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    file.fileType.toUpperCase(),
+                    badgeLabel,
                     style: TextStyle(
                       color: iconColor,
                       fontSize: 11,
@@ -707,9 +739,9 @@ class _FileCard extends StatelessWidget {
                 height: 24,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            else if (isXml)
+            else if (isMusicXml)
               FilledButton.icon(
-                onPressed: onDownload,
+                onPressed: onAction,
                 icon: const Icon(Icons.download, size: 16),
                 label: const Text('Import'),
                 style: FilledButton.styleFrom(
@@ -719,9 +751,22 @@ class _FileCard extends StatelessWidget {
                   ),
                 ),
               )
+            else if (isMidi)
+              FilledButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.play_arrow, size: 16),
+                label: const Text('Play'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                ),
+              )
             else
               OutlinedButton.icon(
-                onPressed: onDownload,
+                onPressed: onAction,
                 icon: const Icon(Icons.open_in_new, size: 16),
                 label: const Text('View'),
                 style: OutlinedButton.styleFrom(
