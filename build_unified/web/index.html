@@ -142,8 +142,36 @@
 
     function _ensureSynth() {
       if (window._playbackSynth) return;
-      // Use FM synthesis piano — works instantly, no CDN dependency
-      console.log('[Playback] Creating FM piano synth');
+      // Try Sampler with LOCAL piano samples first (no CDN)
+      try {
+        console.log('[Playback] Loading local Salamander piano samples...');
+        window._playbackSynth = new Tone.Sampler({
+          urls: {
+            'A0': 'A0.mp3', 'C1': 'C1.mp3', 'C2': 'C2.mp3',
+            'C3': 'C3.mp3', 'C4': 'C4.mp3', 'C5': 'C5.mp3',
+            'C6': 'C6.mp3', 'C7': 'C7.mp3', 'C8': 'C8.mp3',
+          },
+          release: 1.2,
+          baseUrl: 'audio/piano/',
+          onload: function() {
+            window._pianoSamplerReady = true;
+            console.log('[Playback] Piano samples loaded!');
+          },
+          onerror: function(e) {
+            console.warn('[Playback] Sampler error, switching to FM synth:', e);
+            _createFMSynth();
+          }
+        }).toDestination();
+        window._playbackSynth.volume.value = -3;
+        // Set ready after 3 seconds even if not all loaded (Sampler interpolates)
+        setTimeout(function() { window._pianoSamplerReady = true; }, 3000);
+      } catch(e) {
+        console.warn('[Playback] Sampler failed:', e);
+        _createFMSynth();
+      }
+    }
+
+    function _createFMSynth() {
       window._playbackSynth = new Tone.PolySynth(Tone.FMSynth, {
         maxPolyphony: 8,
         voice: Tone.FMSynth,
@@ -156,7 +184,8 @@
           modulationEnvelope: { attack: 0.002, decay: 0.2, sustain: 0, release: 0.5 }
         }
       }).toDestination();
-      window._playbackSynth.volume.value = -6; // slightly quieter
+      window._playbackSynth.volume.value = -6;
+      window._pianoSamplerReady = true;
     }
 
     // Convert Verovio timemap entry to Tone.js note name (e.g. "C4")
