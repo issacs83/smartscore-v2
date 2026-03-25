@@ -434,12 +434,22 @@ class OMRHandler(BaseHTTPRequestHandler):
             if not title:
                 title = score_id.split("/")[-1].replace(".xml", "").replace(".mxl", "")
 
-            self._json_response({
+            # Render to PNG via LilyPond (Verovio crashes on complex MusicXML)
+            png_b64 = self._render_to_png(xml_content, tmp_path + "_render")
+            midi_b64 = self._render_to_midi(tmp_path + "_render")
+
+            response = {
                 "musicxml": xml_content,
                 "title": title,
                 "parts": part_count,
                 "success": True,
-            })
+            }
+            if png_b64:
+                response["png_base64"] = png_b64
+            if midi_b64:
+                response["midi_base64"] = midi_b64
+
+            self._json_response(response)
 
         except Exception as e:
             traceback.print_exc()
@@ -687,18 +697,30 @@ class OMRHandler(BaseHTTPRequestHandler):
                 cwd=os.path.dirname(ly_path) or "/tmp"
             )
 
-            if os.path.exists(png_path):
-                with open(png_path, "rb") as f:
-                    png_data = f.read()
-                os.unlink(png_path)
+            # LilyPond may create -page1.png, -page2.png for multi-page scores
+            # or just .png for single page
+            import glob
+            png_candidates = [png_path] + sorted(glob.glob(base_path + "_render-page*.png"))
+
+            png_data = None
+            for candidate in png_candidates:
+                if os.path.exists(candidate):
+                    with open(candidate, "rb") as f:
+                        png_data = f.read()
+                    os.unlink(candidate)
+                    break  # Use first page
+
+            # Clean up remaining page PNGs
+            for leftover in glob.glob(base_path + "_render-page*.png"):
+                os.unlink(leftover)
+            if os.path.exists(xml_path):
                 os.unlink(xml_path)
+
+            if png_data:
                 print(f"[Render] PNG: {len(png_data)} bytes")
                 return base64.b64encode(png_data).decode("ascii")
             else:
                 print(f"[Render] LilyPond failed: {result.stderr[:200]}")
-                # Cleanup
-                for p in [xml_path]:
-                    if os.path.exists(p): os.unlink(p)
                 return None
         except Exception as e:
             print(f"[Render] Error: {e}")

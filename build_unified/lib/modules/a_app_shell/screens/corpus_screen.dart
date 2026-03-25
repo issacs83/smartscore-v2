@@ -181,7 +181,8 @@ class _CorpusScreenState extends State<CorpusScreen> {
           final title = (data['title'] as String?)?.isNotEmpty == true
               ? data['title'] as String
               : result.title;
-          final scoreId = DemoData.addImported(title, xml);
+          final pngBase64 = data['png_base64'] as String?;
+          final scoreId = DemoData.addImported(title, xml, pngBase64: pngBase64);
           if (mounted) {
             context.go('/viewer/$scoreId');
           }
