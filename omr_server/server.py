@@ -530,6 +530,9 @@ class OMRHandler(BaseHTTPRequestHandler):
         if self.path == "/omr/multi":
             self._handle_omr_multi()
             return
+        if self.path == "/render":
+            self._handle_render()
+            return
         if self.path != "/omr":
             self._json_response({"error": "Not found"}, 404)
             return
@@ -597,19 +600,8 @@ class OMRHandler(BaseHTTPRequestHandler):
                 if musicxml:
                     print(f"[OMR] Success: {len(musicxml)} chars MusicXML")
 
-                    # Also render to PNG via LilyPond
-                    png_b64 = self._render_to_png(musicxml, tmp_path)
-
+                    # Return MusicXML immediately — viewer calls /render separately
                     response = {"musicxml": musicxml, "success": True}
-                    if png_b64:
-                        response["png_base64"] = png_b64
-                        response["has_rendered_image"] = True
-
-                    # Also generate MIDI
-                    midi_b64 = self._render_to_midi(tmp_path)
-                    if midi_b64:
-                        response["midi_base64"] = midi_b64
-
                     self._json_response(response)
                 else:
                     self._json_response({"error": "OMR produced no output", "success": False}, 500)
@@ -728,7 +720,7 @@ class OMRHandler(BaseHTTPRequestHandler):
             # LilyPond → PNG
             result = subprocess.run(
                 ["lilypond", "--png", "-dresolution=150", ly_path],
-                capture_output=True, text=True, timeout=180,
+                capture_output=True, text=True, timeout=90,
                 cwd=os.path.dirname(ly_path) or "/tmp"
             )
 
@@ -841,18 +833,39 @@ class OMRHandler(BaseHTTPRequestHandler):
                     )
                     return
 
-                # Run OMR on each page
+                # Run OMR on each page (with per-page timeout)
+                import threading
                 xml_list = []
+                PAGE_TIMEOUT = 120  # seconds per page
+
                 for i, img_path in enumerate(tmp_paths):
                     print(f"[OMR/multi] Page {i + 1}/{len(tmp_paths)}: {img_path}")
-                    try:
-                        xml = self._run_omr(img_path)
-                        if xml:
-                            xml_list.append(xml)
-                        else:
-                            print(f"[OMR/multi] Page {i + 1}: no output")
-                    except Exception as page_err:
-                        print(f"[OMR/multi] Page {i + 1} failed: {page_err}")
+                    page_result = [None]
+                    page_error = [None]
+
+                    def run_page(path=img_path):
+                        try:
+                            page_result[0] = self._run_omr(path)
+                        except Exception as e:
+                            page_error[0] = e
+
+                    t = threading.Thread(target=run_page)
+                    t.start()
+                    t.join(timeout=PAGE_TIMEOUT)
+
+                    if t.is_alive():
+                        print(f"[OMR/multi] Page {i + 1}: TIMEOUT after {PAGE_TIMEOUT}s, skipping")
+                        continue
+
+                    if page_error[0]:
+                        print(f"[OMR/multi] Page {i + 1} failed: {page_error[0]}")
+                        continue
+
+                    if page_result[0]:
+                        xml_list.append(page_result[0])
+                        print(f"[OMR/multi] Page {i + 1}: OK ({len(page_result[0])} chars)")
+                    else:
+                        print(f"[OMR/multi] Page {i + 1}: no output")
 
                 if not xml_list:
                     self._json_response(
@@ -864,20 +877,15 @@ class OMRHandler(BaseHTTPRequestHandler):
                 merged_xml = self._merge_musicxml_pages(xml_list)
                 print(f"[OMR/multi] Merged {len(xml_list)} page(s): {len(merged_xml)} chars")
 
-                # Render merged score to PNG
-                render_base = tmp_paths[0].rsplit(".", 1)[0] + "_multi"
-                png_b64 = self._render_to_png(merged_xml, render_base)
-                midi_b64 = self._render_to_midi(render_base)
+                # Skip LilyPond rendering here — return MusicXML immediately.
+                # The viewer will call /render separately if needed.
+                print(f"[OMR/multi] Returning MusicXML immediately (no LilyPond render)")
 
                 response = {
                     "musicxml": merged_xml,
                     "page_count": len(xml_list),
                     "success": True,
                 }
-                if png_b64:
-                    response["png_base64"] = png_b64
-                if midi_b64:
-                    response["midi_base64"] = midi_b64
 
                 self._json_response(response)
 
@@ -886,6 +894,45 @@ class OMRHandler(BaseHTTPRequestHandler):
                     if os.path.exists(p):
                         os.unlink(p)
 
+        except Exception as e:
+            traceback.print_exc()
+            self._json_response({"error": str(e), "success": False}, 500)
+
+    def _handle_render(self):
+        """POST /render — render MusicXML to PNG via LilyPond.
+
+        Body: JSON {"musicxml": "<xml>..."}
+        Returns: {"png_base64": "...", "success": true}
+        """
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length).decode("utf-8")
+            data = json.loads(body)
+            musicxml = data.get("musicxml", "")
+            if not musicxml:
+                self._json_response({"error": "No musicxml provided", "success": False}, 400)
+                return
+
+            print(f"[Render] Rendering MusicXML ({len(musicxml)} chars) to PNG...")
+            with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+                tmp.write(musicxml.encode("utf-8"))
+                tmp_path = tmp.name
+
+            try:
+                png_b64 = self._render_to_png(musicxml, tmp_path)
+                midi_b64 = self._render_to_midi(tmp_path)
+                response = {"success": True}
+                if png_b64:
+                    response["png_base64"] = png_b64
+                if midi_b64:
+                    response["midi_base64"] = midi_b64
+                if not png_b64:
+                    response["success"] = False
+                    response["error"] = "LilyPond rendering failed"
+                self._json_response(response)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
         except Exception as e:
             traceback.print_exc()
             self._json_response({"error": str(e), "success": False}, 500)

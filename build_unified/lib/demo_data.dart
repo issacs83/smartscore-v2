@@ -1,3 +1,5 @@
+import 'services/score_store.dart';
+
 /// Built-in demo MusicXML scores for testing without file import.
 /// All XML is valid score-partwise MusicXML 3.1 that the existing
 /// MusicXmlParser (Module E) can parse without errors.
@@ -536,39 +538,35 @@ class DemoData {
   /// Returns true if [scoreId] refers to a built-in demo score.
   static bool isDemo(String scoreId) => demos.containsKey(scoreId);
 
-  /// In-memory store for user-imported scores.
-  /// Key: generated id (e.g. "import_0"), Value: { title, xml }
-  static final Map<String, Map<String, String>> _imported = {};
-
   /// Registers an imported MusicXML string and returns its generated id.
+  /// Persisted via Hive (IndexedDB on web).
   static String addImported(String title, String xml, {String? pngBase64}) {
-    final id = 'import_${_imported.length}';
-    _imported[id] = {'title': title, 'xml': xml};
-    if (pngBase64 != null) {
-      _renderedImages[id] = pngBase64;
-    }
-    return id;
+    return ScoreStore.addScore(title, xml, pngBase64: pngBase64);
   }
 
-  static final Map<String, String> _renderedImages = {};
-
   /// Get rendered PNG (base64) for a score, if available
-  static String? getRenderedPng(String scoreId) => _renderedImages[scoreId];
+  static String? getRenderedPng(String scoreId) =>
+      ScoreStore.getRenderedPng(scoreId);
 
-  /// All entries visible on the home screen (demos + imports).
+  /// Set rendered PNG for a score (used by viewer fallback)
+  static void setRenderedPng(String scoreId, String pngBase64) {
+    ScoreStore.setRenderedPng(scoreId, pngBase64);
+  }
+
+  /// All entries visible on the home screen (demos + persisted imports).
   static Map<String, Map<String, String>> get allScores => {
         ...demos,
-        ..._imported,
+        ...ScoreStore.allImported,
       };
 
   /// Returns the XML string for a score (demo or imported), or null if not found.
   static String? getXml(String scoreId) =>
-      demos[scoreId]?['xml'] ?? _imported[scoreId]?['xml'];
+      demos[scoreId]?['xml'] ?? ScoreStore.getXml(scoreId);
 
   /// Returns the display title for a score (demo or imported).
   static String getTitle(String scoreId) =>
-      demos[scoreId]?['title'] ?? _imported[scoreId]?['title'] ?? scoreId;
+      demos[scoreId]?['title'] ?? ScoreStore.getTitle(scoreId);
 
   /// Returns true if [scoreId] is an imported score.
-  static bool isImported(String scoreId) => _imported.containsKey(scoreId);
+  static bool isImported(String scoreId) => ScoreStore.isImported(scoreId);
 }

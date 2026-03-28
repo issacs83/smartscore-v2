@@ -37,7 +37,32 @@ class _ScanScreenState extends State<ScanScreen> {
   // Camera / file capture
   // ---------------------------------------------------------------------------
 
-  Future<void> _capturePage() async {
+  /// Pick multiple images from gallery at once
+  Future<void> _pickFromGallery() async {
+    if (!kIsWeb) return;
+
+    final input = html.FileUploadInputElement()
+      ..accept = 'image/*'
+      ..multiple = true;
+    input.click();
+
+    await input.onChange.first;
+
+    final files = input.files;
+    if (files == null || files.isEmpty) return;
+
+    for (final file in files) {
+      final dataUrl = await _readAsDataUrl(file);
+      if (dataUrl != null) {
+        setState(() {
+          _pages.add(_PageEntry(file: file, dataUrl: dataUrl));
+        });
+      }
+    }
+  }
+
+  /// Capture a single photo from camera
+  Future<void> _captureFromCamera() async {
     if (!kIsWeb) return;
 
     final input = html.FileUploadInputElement()
@@ -56,6 +81,11 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() {
       _pages.add(_PageEntry(file: file, dataUrl: dataUrl));
     });
+  }
+
+  /// Legacy single-pick (kept for compatibility)
+  Future<void> _capturePage() async {
+    _pickFromGallery();
   }
 
   Future<String?> _readAsDataUrl(html.File file) async {
@@ -166,19 +196,24 @@ class _ScanScreenState extends State<ScanScreen> {
       );
 
       final request = html.HttpRequest()
-        ..open('POST', '$_omrServerUrl/omr/multi');
+        ..open('POST', '$_omrServerUrl/omr/multi')
+        ..timeout = 300000; // 5 minutes timeout for OMR
 
       var progress = 0.1;
+      var elapsed = 0;
       final progressTimer = Timer.periodic(const Duration(seconds: 2), (t) {
-        progress = (progress + 0.04).clamp(0.0, 0.85);
+        elapsed += 2;
+        if (progress < 0.85) {
+          progress = (progress + 0.04).clamp(0.0, 0.85);
+        }
         final stepMsg = progress < 0.3
             ? 'Detecting staff lines...'
             : progress < 0.5
                 ? 'Recognizing notes and symbols...'
                 : progress < 0.7
                     ? 'Merging pages...'
-                    : 'Generating merged MusicXML...';
-        _updateLoading(stepMsg, progress);
+                    : 'AI processing... (${elapsed}s elapsed)';
+        _updateLoading(stepMsg, progress < 0.85 ? progress : -1);
       });
 
       final completer = request.onLoad.first;
@@ -276,12 +311,16 @@ class _ScanScreenState extends State<ScanScreen> {
                       pages: _pages,
                       onRemove: _processing ? null : _removePage,
                     )
-                  : _EmptyState(onCapture: _processing ? null : _capturePage),
+                  : _EmptyState(
+                      onGallery: _processing ? null : _pickFromGallery,
+                      onCamera: _processing ? null : _captureFromCamera,
+                    ),
             ),
             _BottomActionBar(
               pageCount: _pages.length,
               processing: _processing,
-              onAddPage: _capturePage,
+              onGallery: _pickFromGallery,
+              onCamera: _captureFromCamera,
               onProcessAll: _pages.isNotEmpty ? _processAll : null,
             ),
           ],
@@ -303,9 +342,10 @@ class _PageEntry {
 }
 
 class _EmptyState extends StatelessWidget {
-  final VoidCallback? onCapture;
+  final VoidCallback? onGallery;
+  final VoidCallback? onCamera;
 
-  const _EmptyState({this.onCapture});
+  const _EmptyState({this.onGallery, this.onCamera});
 
   @override
   Widget build(BuildContext context) {
@@ -323,35 +363,52 @@ class _EmptyState extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.camera_alt,
+              Icons.music_note,
               size: 48,
               color: colorScheme.primary,
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            'No pages yet',
+            'Add score pages',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap below to photograph page 1 of your score',
+            'Select images from gallery or take photos',
             style: TextStyle(color: Colors.grey.shade600),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          FilledButton.icon(
-            onPressed: onCapture,
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Take Photo'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 32,
-                vertical: 14,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: onGallery,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Gallery'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 16),
+              OutlinedButton.icon(
+                onPressed: onCamera,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Camera'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -467,13 +524,15 @@ class _PageTile extends StatelessWidget {
 class _BottomActionBar extends StatelessWidget {
   final int pageCount;
   final bool processing;
-  final VoidCallback? onAddPage;
+  final VoidCallback? onGallery;
+  final VoidCallback? onCamera;
   final VoidCallback? onProcessAll;
 
   const _BottomActionBar({
     required this.pageCount,
     required this.processing,
-    this.onAddPage,
+    this.onGallery,
+    this.onCamera,
     this.onProcessAll,
   });
 
@@ -496,15 +555,26 @@ class _BottomActionBar extends StatelessWidget {
           if (pageCount > 0) ...[
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: processing ? null : onAddPage,
-                icon: const Icon(Icons.add_a_photo),
-                label: const Text('Add Page'),
+                onPressed: processing ? null : onGallery,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Gallery'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: processing ? null : onCamera,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Camera'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               flex: 2,
               child: FilledButton.icon(
@@ -532,10 +602,21 @@ class _BottomActionBar extends StatelessWidget {
           ] else ...[
             Expanded(
               child: FilledButton.icon(
-                onPressed: processing ? null : onAddPage,
-                icon: const Icon(Icons.camera_alt),
-                label: const Text('Take Photo'),
+                onPressed: processing ? null : onGallery,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Select Images'),
                 style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: processing ? null : onCamera,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Camera'),
+                style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),

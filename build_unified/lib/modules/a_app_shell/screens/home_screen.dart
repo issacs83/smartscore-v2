@@ -220,6 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final request = html.HttpRequest();
       request.open('POST', '$_omrServerUrl/omr');
+      request.timeout = 300000; // 5 minutes timeout for OMR
 
       // Progress simulation while waiting
       var progress = 0.2;

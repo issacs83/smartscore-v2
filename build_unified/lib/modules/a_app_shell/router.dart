@@ -11,6 +11,7 @@ import 'screens/capture_screen.dart';
 import 'screens/import_screen.dart';
 import 'screens/debug_screen.dart';
 import 'screens/scan_screen.dart';
+import 'screens/performance_screen.dart';
 
 /// Creates the GoRouter configuration for the app
 GoRouter createRouter() {
@@ -61,6 +62,16 @@ GoRouter createRouter() {
             name: 'camera',
             pageBuilder: (context, state) {
               return const MaterialPage(child: CaptureScreen());
+            },
+          ),
+          GoRoute(
+            path: 'perform/:id',
+            name: 'perform',
+            pageBuilder: (context, state) {
+              final scoreId = state.pathParameters['id']!;
+              return MaterialPage(
+                child: PerformanceScreen(scoreId: scoreId),
+              );
             },
           ),
           GoRoute(

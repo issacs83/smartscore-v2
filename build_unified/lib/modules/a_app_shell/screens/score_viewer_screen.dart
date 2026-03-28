@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:go_router/go_router.dart';
 
 import '../../../demo_data.dart';
@@ -81,18 +82,66 @@ class _ScoreViewerScreenState extends State<ScoreViewerScreen> {
     try {
       final svg = verovioLoadScore(xml);
       final pages = verovioGetPageCount();
-      setState(() {
-        _svgContent = svg;
-        _totalPages = pages;
-        _currentPage = 1;
-        _loading = false;
-      });
+      final isValid = svg != null &&
+          svg.length > 200 &&
+          !svg.contains('Verovio not ready') &&
+          !svg.contains('<p>Error:') &&
+          !svg.contains('is not a function') &&
+          svg.contains('<svg') &&
+          (svg.contains('<g') || svg.contains('<path') || svg.contains('<rect'));
+      if (isValid) {
+        setState(() {
+          _svgContent = svg;
+          _totalPages = pages;
+          _currentPage = 1;
+          _loading = false;
+        });
+        return;
+      }
+      debugPrint('Verovio output invalid, falling back to server render');
     } catch (e) {
-      setState(() {
-        _error = 'Render error: $e';
-        _loading = false;
-      });
+      debugPrint('Verovio render failed: $e');
     }
+
+    // Fallback: request server-side LilyPond rendering
+    if (kIsWeb) {
+      try {
+        debugPrint('Verovio failed, trying server-side LilyPond render...');
+        setState(() {
+          _error = null;
+          _loading = true;
+        });
+        final request = html.HttpRequest();
+        request.open('POST', '/render');
+        request.timeout = 180000; // 3 minutes for LilyPond render
+        request.setRequestHeader('Content-Type', 'application/json');
+        request.send(jsonEncode({'musicxml': xml}));
+        await request.onLoad.first;
+        if (request.status == 200) {
+          final resp = jsonDecode(request.responseText ?? '{}');
+          if (resp['png_base64'] != null) {
+            DemoData.setRenderedPng(widget.scoreId, resp['png_base64'] as String);
+            setState(() {
+              _renderedPngBase64 = resp['png_base64'] as String;
+              _totalPages = 1;
+              _currentPage = 1;
+              _loading = false;
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('Server render fallback failed: $e');
+      }
+    }
+
+    // Final fallback: show error with info
+    setState(() {
+      _error = 'Score loaded but rendering failed.\n'
+          'The MusicXML is too complex for the browser renderer.\n'
+          'Score data is saved — try again later.';
+      _loading = false;
+    });
   }
 
   void _goToPage(int page) {
@@ -334,6 +383,16 @@ class _ScoreViewerScreenState extends State<ScoreViewerScreen> {
               label: '${_tempo.round()}',
               onChanged: _onTempoChanged,
             ),
+          ),
+          // Performance mode button
+          IconButton(
+            tooltip: 'Performance Mode',
+            icon: Icon(
+              Icons.music_note,
+              size: 28,
+              color: colorScheme.primary,
+            ),
+            onPressed: () => context.go('/perform/${widget.scoreId}'),
           ),
         ],
       ),

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'modules/a_app_shell/app.dart';
 import 'modules/a_app_shell/state/app_state.dart';
 import 'modules/a_app_shell/state/providers.dart';
+import 'services/score_store.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,11 @@ void main() async {
   // Boot logging
   debugPrint('[SmartScore] Boot: Starting application initialization...');
   final startTime = DateTime.now();
+
+  // Initialize persistent storage (Hive / IndexedDB)
+  debugPrint('[SmartScore] Boot: Initializing ScoreStore...');
+  await ScoreStore.init();
+  debugPrint('[SmartScore] Boot: ScoreStore ready');
 
   // Initialize services
   debugPrint('[SmartScore] Boot: Initializing AppState...');
